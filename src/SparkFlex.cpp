@@ -4,7 +4,6 @@
  * @author Grayson Arendt
  */
 
-
 #include "SparkFlex.hpp"
 
 SparkFlex::SparkFlex(const std::string &interfaceName, uint8_t deviceId)
