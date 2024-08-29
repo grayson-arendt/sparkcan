@@ -4,8 +4,8 @@
  * @author Grayson Arendt
  */
 
-#ifndef SparkBase_HPP
-#define SparkBase_HPP
+#ifndef SPARKBASE_HPP
+#define SPARKBASE_HPP
 
 #include <linux/can.h>
 #include <net/if.h>
@@ -1003,4 +1003,4 @@ public:
     void SetDutyCycleZeroOffset(float offset);
 };
 
-#endif // SparkBase_HPP
+#endif // SPARKBASE_HPP
