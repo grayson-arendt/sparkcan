@@ -286,17 +286,17 @@ public:
     /**
      * @brief Burns the current configuration to the SPARK controller's flash memory
      */
-    void ConfigBurnFlash();
+    void BurnFlash();
 
     /**
      * @brief Resets the SPARK controller to factory default settings
      */
-    void ConfigFactoryDefaults();
+    void FactoryDefaults();
 
     /**
      * @brief Performs a factory reset on the SPARK controller
      */
-    void ConfigFactoryReset();
+    void FactoryReset();
 
     /**
      * @brief Triggers the SPARK controller to identify itself

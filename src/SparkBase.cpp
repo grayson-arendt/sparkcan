@@ -212,7 +212,7 @@ void SparkBase::Heartbeat()
     SendCanFrame(frame.can_id, frame.can_dlc, dataArray);
 }
 
-void SparkBase::ConfigBurnFlash()
+void SparkBase::BurnFlash()
 {
     uint32_t arbitrationId = static_cast<uint32_t>(SystemControl::BurnFlash) + deviceId;
 
@@ -221,7 +221,7 @@ void SparkBase::ConfigBurnFlash()
     SendCanFrame(arbitrationId, 2, data);
 }
 
-void SparkBase::ConfigFactoryDefaults()
+void SparkBase::FactoryDefaults()
 {
     uint32_t arbitrationId =
         static_cast<uint32_t>(SystemControl::FactoryDefaults) + deviceId;
@@ -231,7 +231,7 @@ void SparkBase::ConfigFactoryDefaults()
     SendCanFrame(arbitrationId, 5, data);
 }
 
-void SparkBase::ConfigFactoryReset()
+void SparkBase::FactoryReset()
 {
     uint32_t arbitrationId = static_cast<uint32_t>(SystemControl::FactoryReset) + deviceId;
 
