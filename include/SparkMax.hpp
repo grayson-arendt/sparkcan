@@ -4,6 +4,9 @@
  * @author Grayson Arendt
  */
 
+#ifndef SPARKMAX_HPP
+#define SPARKMAX_HPP
+
 #pragma once
 
 #include "SparkBase.hpp"
@@ -21,3 +24,5 @@ public:
     explicit SparkMax(const std::string &interfaceName, uint8_t deviceId);
     ~SparkMax() override = default;
 };
+
+#endif // SPARKMAX_HPP
