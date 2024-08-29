@@ -220,7 +220,7 @@ enum class Parameter : uint32_t
 
 /**
  * @class SparkBase
- * @brief A C++ interface for controlling REV Robotics SPARK motor controllers via CAN bus
+ * @brief A base class for controlling REV Robotics SPARK motor controllers
  *
  * This class provides methods to configure, control, and monitor SPARK motor controllers.
  * It supports various control modes, parameter settings, and status readings.

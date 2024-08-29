@@ -10,9 +10,9 @@
 
 /**
  * @class SparkFlex
- * @brief A C++ interface for controlling REV Robotics SPARK Flex via CAN bus
+ * @brief A class for controlling REV Robotics SPARK Flex via CAN bus
  *
- * This class provides methods to configure, control, and monitor SPARK motor controllers.
+ * This class provides methods to configure, control, and monitor the SPARK Flex.
  * It supports various control modes, parameter settings, and status readings.
  */
 class SparkFlex : public SparkBase
