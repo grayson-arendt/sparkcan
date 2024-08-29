@@ -19,5 +19,5 @@ class SparkMax : public SparkBase
 {
 public:
     explicit SparkMax(const std::string &interfaceName, uint8_t deviceId);
-    virtual ~SparkMax();
+    ~SparkMax() override = default;
 };

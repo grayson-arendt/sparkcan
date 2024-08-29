@@ -264,7 +264,7 @@ public:
      *
      * Closes the socket connection
      */
-    ~SparkBase();
+    virtual ~SparkBase();
 
     // SystemControl Methods //
 
