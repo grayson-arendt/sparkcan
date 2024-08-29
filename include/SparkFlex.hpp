@@ -1,6 +1,6 @@
 /**
  * @file SparkFlex.hpp
- * @brief Source file for the SPARK Flex motor controller interface
+ * @brief Header file for the SparkFlex class for controlling REV Robotics SPARK Flex controllers
  * @author Grayson Arendt
  */
 

@@ -1,8 +1,9 @@
 /**
  * @file SparkBase.cpp
- * @brief Source file for the SPARK MAX and SPARK Flex motor controller interface
+ * @brief Source file for the base class for controlling REV Robotics SPARK motor controllers
  * @author Grayson Arendt
  */
+
 #include "SparkBase.hpp"
 
 SparkBase::SparkBase(const std::string &interfaceName, uint8_t deviceId)

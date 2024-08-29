@@ -1,6 +1,6 @@
 /**
  * @file SparkBase.hpp
- * @brief Source file for the SPARK MAX and SPARK Flex motor controller interface
+ * @brief Header file for the base class for controlling REV Robotics SPARK motor controllers
  * @author Grayson Arendt
  */
 
@@ -220,7 +220,7 @@ enum class Parameter : uint32_t
 
 /**
  * @class SparkBase
- * @brief A base class for controlling REV Robotics SPARK motor controllers
+ * @brief A base class for controlling REV Robotics SPARK motor controllers via CAN bus
  *
  * This class provides methods to configure, control, and monitor SPARK motor controllers.
  * It supports various control modes, parameter settings, and status readings.

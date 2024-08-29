@@ -1,6 +1,6 @@
 /**
  * @file SparkMax.hpp
- * @brief Source file for the SPARK MAX motor controller interface
+ * @brief Header file for the SparkMax class for controlling REV Robotics SPARK MAX controllers
  * @author Grayson Arendt
  */
 
