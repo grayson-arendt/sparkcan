@@ -18,6 +18,6 @@
 class SparkFlex : public SparkBase
 {
 public:
-    explicit SparkFlex(const std::string &interfaceName, uint8_t deviceId)
-        : SparkBase(interfaceName, deviceId) {}
+    explicit SparkFlex(const std::string &interfaceName, uint8_t deviceId);
+    virtual ~SparkFlex();
 };
