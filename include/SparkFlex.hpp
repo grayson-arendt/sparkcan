@@ -6,7 +6,6 @@
 
 #ifndef SPARKFLEX_HPP
 #define SPARKFLEX_HPP
-
 #pragma once
 
 #include "SparkBase.hpp"
@@ -24,6 +23,5 @@ public:
     explicit SparkFlex(const std::string &interfaceName, uint8_t deviceId);
     ~SparkFlex() override = default;
 };
-
 
 #endif // SPARKFLEX_HPP

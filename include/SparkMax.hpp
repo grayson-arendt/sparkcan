@@ -6,7 +6,6 @@
 
 #ifndef SPARKMAX_HPP
 #define SPARKMAX_HPP
-
 #pragma once
 
 #include "SparkBase.hpp"

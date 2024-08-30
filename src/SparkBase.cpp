@@ -382,7 +382,7 @@ float SparkBase::GetAnalogVoltage() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period3);
     uint16_t analogVoltage = status & 0x3FF;
-    return static_cast<float>(analogVoltage) * (3.3f / 1023.0f);
+    return static_cast<float>(analogVoltage) / 256.0f;
 }
 
 float SparkBase::GetAnalogVelocity() const
