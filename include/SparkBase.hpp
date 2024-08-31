@@ -240,9 +240,12 @@ private:
     void SendCanFrame(
         uint32_t arbitrationId, uint8_t dlc,
         const std::array<uint8_t, 8> &data = std::array<uint8_t, 8>{}) const;
+
     void SendControlMessage(std::variant<MotorControl, SystemControl> command,
                             float value);
+
     uint64_t ReadPeriodicStatus(Status period) const;
+
     void SetParameter(
         Parameter parameterId, uint8_t parameterType,
         std::variant<float, uint32_t, uint16_t, uint8_t, bool> value);

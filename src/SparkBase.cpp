@@ -367,6 +367,7 @@ float SparkBase::GetCurrent() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period1);
     uint16_t current = (status >> 52) & 0xFFF;
+
     return static_cast<float>(current) / 32.0f;
 }
 
@@ -374,6 +375,7 @@ float SparkBase::GetCurrent() const
 float SparkBase::GetPosition() const
 {
     uint64_t rawData = ReadPeriodicStatus(Status::Period2);
+
     return *reinterpret_cast<const float *>(&rawData);
 }
 
@@ -382,6 +384,7 @@ float SparkBase::GetAnalogVoltage() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period3);
     uint16_t analogVoltage = status & 0x3FF;
+
     return static_cast<float>(analogVoltage) / 256.0f;
 }
 
@@ -389,8 +392,10 @@ float SparkBase::GetAnalogVelocity() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period3);
     int32_t analogVelocity = (status >> 10) & 0x3FFFFF;
+
     if (analogVelocity & 0x200000) // Sign extend if negative
         analogVelocity |= 0xFFC00000;
+
     return static_cast<float>(analogVelocity) / 128.0f;
 }
 
