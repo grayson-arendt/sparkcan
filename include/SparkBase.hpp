@@ -232,7 +232,6 @@ private:
     uint8_t deviceId;
     struct sockaddr_can addr;
     struct ifreq ifr;
-    float encoderCountsPerRev;
 
     mutable std::map<Status,
                      std::pair<uint64_t, std::chrono::steady_clock::time_point>>

@@ -374,7 +374,7 @@ float SparkBase::GetCurrent() const
 float SparkBase::GetPosition() const
 {
     uint64_t rawData = ReadPeriodicStatus(Status::Period2);
-    return *reinterpret_cast<const float *>(&rawData) * encoderCountsPerRev;
+    return *reinterpret_cast<const float *>(&rawData);
 }
 
 // Period 3 //
@@ -826,7 +826,6 @@ void SparkBase::SetFollowerConfig(uint32_t config)
 
 void SparkBase::SetEncoderCountsPerRev(uint16_t counts)
 {
-    encoderCountsPerRev = static_cast<float>(counts);
     SetParameter(Parameter::kEncoderCountsPerRev, PARAM_TYPE_UINT, counts);
 }
 
