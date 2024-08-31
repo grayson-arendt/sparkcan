@@ -86,6 +86,11 @@ void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc,
 void SparkBase::SendControlMessage(
     std::variant<MotorControl, SystemControl> command, float value)
 {
+    if (!std::isfinite(value))
+    {
+        throw std::invalid_argument(RED "Control value must be a finite number." RESET);
+    }
+
     uint32_t arbitrationId = 0;
     uint32_t valueBits;
     std::array<uint8_t, 8> data = {};
@@ -172,9 +177,20 @@ void SparkBase::SetParameter(
         [&](auto &&v)
         {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, float> || std::is_same_v<T, uint32_t> ||
-                          std::is_same_v<T, uint16_t>)
+            if constexpr (std::is_same_v<T, float>)
             {
+                if (!std::isfinite(v))
+                {
+                    throw std::invalid_argument(RED "Parameter value must be a finite number." RESET);
+                }
+                std::memcpy(data.data(), &v, sizeof(v));
+            }
+            else if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint16_t>)
+            {
+                if (v > std::numeric_limits<T>::max())
+                {
+                    throw std::out_of_range(RED "Parameter value is out of valid range." RESET);
+                }
                 std::memcpy(data.data(), &v, sizeof(v));
             }
             else if constexpr (std::is_same_v<T, uint8_t>)
@@ -184,6 +200,10 @@ void SparkBase::SetParameter(
             else if constexpr (std::is_same_v<T, bool>)
             {
                 data[0] = v ? 1 : 0;
+            }
+            else
+            {
+                throw std::invalid_argument(RED "Invalid parameter type." RESET);
             }
         },
         value);
@@ -263,9 +283,9 @@ void SparkBase::ClearStickyFaults()
 
 void SparkBase::SetAppliedOutput(float appliedOutput)
 {
-    if (appliedOutput < -1.0f || appliedOutput > 1.0f)
+    if (appliedOutput < -1.0f || appliedOutput > 1.0f || !std::isfinite(appliedOutput))
     {
-        throw std::out_of_range(RED "Applied output must be between -1.0 and 1.0." RESET);
+        throw std::out_of_range(RED "Applied output must be a finite number between -1.0 and 1.0." RESET);
     }
 
     SendControlMessage(MotorControl::AppliedOutput, appliedOutput);
@@ -273,31 +293,55 @@ void SparkBase::SetAppliedOutput(float appliedOutput)
 
 void SparkBase::SetVelocity(float velocity)
 {
+    if (!std::isfinite(velocity))
+    {
+        throw std::invalid_argument(RED "Velocity must be a finite number." RESET);
+    }
     SendControlMessage(MotorControl::Velocity, velocity);
 }
 
 void SparkBase::SetSmartVelocity(float smartVelocity)
 {
+    if (!std::isfinite(smartVelocity))
+    {
+        throw std::invalid_argument(RED "Smart velocity must be a finite number." RESET);
+    }
     SendControlMessage(MotorControl::SmartVelocity, smartVelocity);
 }
 
 void SparkBase::SetPosition(float position)
 {
+    if (!std::isfinite(position))
+    {
+        throw std::invalid_argument(RED "Position must be a finite number." RESET);
+    }
     SendControlMessage(MotorControl::Position, position);
 }
 
 void SparkBase::SetVoltage(float voltage)
 {
+    if (!std::isfinite(voltage))
+    {
+        throw std::invalid_argument(RED "Voltage must be a finite number." RESET);
+    }
     SendControlMessage(MotorControl::Voltage, voltage);
 }
 
 void SparkBase::SetCurrent(float current)
 {
+    if (!std::isfinite(current))
+    {
+        throw std::invalid_argument(RED "Current must be a finite number." RESET);
+    }
     SendControlMessage(MotorControl::Current, current);
 }
 
 void SparkBase::SetSmartMotion(float smartMotion)
 {
+    if (!std::isfinite(smartMotion))
+    {
+        throw std::invalid_argument(RED "Smart motion must be a finite number." RESET);
+    }
     SendControlMessage(MotorControl::SmartMotion, smartMotion);
 }
 
@@ -458,6 +502,10 @@ void SparkBase::SetIdleMode(uint8_t mode)
 
 void SparkBase::SetInputDeadband(float deadband)
 {
+    if (!std::isfinite(deadband))
+    {
+        throw std::invalid_argument(RED "Input deadband must be a finite number." RESET);
+    }
     SetParameter(Parameter::kInputDeadband, PARAM_TYPE_FLOAT, deadband);
 }
 
@@ -468,6 +516,10 @@ void SparkBase::SetInverted(bool inverted)
 
 void SparkBase::SetRampRate(float rate)
 {
+    if (!std::isfinite(rate))
+    {
+        throw std::invalid_argument(RED "Ramp rate must be a finite number." RESET);
+    }
     SetParameter(Parameter::kRampRate, PARAM_TYPE_FLOAT, rate);
 }
 
@@ -475,16 +527,28 @@ void SparkBase::SetRampRate(float rate)
 
 void SparkBase::SetMotorKv(uint16_t kv)
 {
+    if (kv > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Motor Kv value is out of range." RESET);
+    }
     SetParameter(Parameter::kMotorKv, PARAM_TYPE_UINT, kv);
 }
 
 void SparkBase::SetMotorR(uint16_t r)
 {
+    if (r > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Motor resistance value is out of range." RESET);
+    }
     SetParameter(Parameter::kMotorR, PARAM_TYPE_UINT, r);
 }
 
 void SparkBase::SetMotorL(uint16_t l)
 {
+    if (l > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Motor inductance value is out of range." RESET);
+    }
     SetParameter(Parameter::kMotorL, PARAM_TYPE_UINT, l);
 }
 
@@ -504,6 +568,10 @@ void SparkBase::SetCtrlType(uint8_t type)
 
 void SparkBase::SetFeedbackSensorPID0(uint16_t sensor)
 {
+    if (sensor > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Feedback sensor PID0 value is out of range." RESET);
+    }
     SetParameter(Parameter::kFeedbackSensorPID0, PARAM_TYPE_UINT, sensor);
 }
 
@@ -522,6 +590,10 @@ void SparkBase::SetClosedLoopVoltageMode(uint8_t mode)
 
 void SparkBase::SetCompensatedNominalVoltage(float voltage)
 {
+    if (!std::isfinite(voltage))
+    {
+        throw std::invalid_argument(RED "Compensated nominal voltage must be a finite number." RESET);
+    }
     SetParameter(Parameter::kCompensatedNominalVoltage, PARAM_TYPE_FLOAT, voltage);
 }
 
@@ -532,11 +604,19 @@ void SparkBase::SetPositionPIDWrapEnable(bool enable)
 
 void SparkBase::SetPositionPIDMinInput(float minInput)
 {
+    if (!std::isfinite(minInput))
+    {
+        throw std::invalid_argument(RED "Position PID min input must be a finite number." RESET);
+    }
     SetParameter(Parameter::kPositionPIDMinInput, PARAM_TYPE_FLOAT, minInput);
 }
 
 void SparkBase::SetPositionPIDMaxInput(float maxInput)
 {
+    if (!std::isfinite(maxInput))
+    {
+        throw std::invalid_argument(RED "Position PID max input must be a finite number." RESET);
+    }
     SetParameter(Parameter::kPositionPIDMaxInput, PARAM_TYPE_FLOAT, maxInput);
 }
 
@@ -544,6 +624,10 @@ void SparkBase::SetPositionPIDMaxInput(float maxInput)
 
 void SparkBase::SetPolePairs(uint16_t pairs)
 {
+    if (pairs > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Pole pairs value is out of range." RESET);
+    }
     SetParameter(Parameter::kPolePairs, PARAM_TYPE_UINT, pairs);
 }
 
@@ -551,7 +635,7 @@ void SparkBase::SetPolePairs(uint16_t pairs)
 
 void SparkBase::SetCurrentChop(float chop)
 {
-    if (chop > 125.0)
+    if (!std::isfinite(chop) || chop > 125.0f)
     {
         throw std::out_of_range(RED "Invalid current chop. Max value is 125." RESET);
     }
@@ -561,21 +645,37 @@ void SparkBase::SetCurrentChop(float chop)
 
 void SparkBase::SetCurrentChopCycles(uint16_t cycles)
 {
+    if (cycles > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Current chop cycles value is out of range." RESET);
+    }
     SetParameter(Parameter::kCurrentChopCycles, PARAM_TYPE_UINT, cycles);
 }
 
 void SparkBase::SetSmartCurrentStallLimit(uint16_t limit)
 {
+    if (limit > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Smart current stall limit value is out of range." RESET);
+    }
     SetParameter(Parameter::kSmartCurrentStallLimit, PARAM_TYPE_UINT, limit);
 }
 
 void SparkBase::SetSmartCurrentFreeLimit(uint16_t limit)
 {
+    if (limit > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Smart current free limit value is out of range." RESET);
+    }
     SetParameter(Parameter::kSmartCurrentFreeLimit, PARAM_TYPE_UINT, limit);
 }
 
 void SparkBase::SetSmartCurrentConfig(uint16_t config)
 {
+    if (config > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Smart current config value is out of range." RESET);
+    }
     SetParameter(Parameter::kSmartCurrentConfig, PARAM_TYPE_UINT, config);
 }
 
@@ -583,6 +683,10 @@ void SparkBase::SetSmartCurrentConfig(uint16_t config)
 
 void SparkBase::SetP(uint8_t slot, float p)
 {
+    if (!std::isfinite(p))
+    {
+        throw std::invalid_argument(RED "P value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -607,6 +711,10 @@ void SparkBase::SetP(uint8_t slot, float p)
 
 void SparkBase::SetI(uint8_t slot, float i)
 {
+    if (!std::isfinite(i))
+    {
+        throw std::invalid_argument(RED "I value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -631,6 +739,10 @@ void SparkBase::SetI(uint8_t slot, float i)
 
 void SparkBase::SetD(uint8_t slot, float d)
 {
+    if (!std::isfinite(d))
+    {
+        throw std::invalid_argument(RED "D value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -655,6 +767,10 @@ void SparkBase::SetD(uint8_t slot, float d)
 
 void SparkBase::SetF(uint8_t slot, float f)
 {
+    if (!std::isfinite(f))
+    {
+        throw std::invalid_argument(RED "F value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -679,6 +795,10 @@ void SparkBase::SetF(uint8_t slot, float f)
 
 void SparkBase::SetIZone(uint8_t slot, float iZone)
 {
+    if (!std::isfinite(iZone))
+    {
+        throw std::invalid_argument(RED "IZone value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -703,6 +823,10 @@ void SparkBase::SetIZone(uint8_t slot, float iZone)
 
 void SparkBase::SetDFilter(uint8_t slot, float dFilter)
 {
+    if (!std::isfinite(dFilter))
+    {
+        throw std::invalid_argument(RED "DFilter value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -727,6 +851,10 @@ void SparkBase::SetDFilter(uint8_t slot, float dFilter)
 
 void SparkBase::SetOutputMin(uint8_t slot, float min)
 {
+    if (!std::isfinite(min))
+    {
+        throw std::invalid_argument(RED "Output min value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -751,6 +879,10 @@ void SparkBase::SetOutputMin(uint8_t slot, float min)
 
 void SparkBase::SetOutputMax(uint8_t slot, float max)
 {
+    if (!std::isfinite(max))
+    {
+        throw std::invalid_argument(RED "Output max value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -807,11 +939,19 @@ void SparkBase::SetSoftLimitRevEn(bool enable)
 
 void SparkBase::SetSoftLimitFwd(float limit)
 {
+    if (!std::isfinite(limit))
+    {
+        throw std::invalid_argument(RED "Soft limit forward value must be a finite number." RESET);
+    }
     SetParameter(Parameter::kSoftLimitFwd, PARAM_TYPE_FLOAT, limit);
 }
 
 void SparkBase::SetSoftLimitRev(float limit)
 {
+    if (!std::isfinite(limit))
+    {
+        throw std::invalid_argument(RED "Soft limit reverse value must be a finite number." RESET);
+    }
     SetParameter(Parameter::kSoftLimitRev, PARAM_TYPE_FLOAT, limit);
 }
 
@@ -819,11 +959,19 @@ void SparkBase::SetSoftLimitRev(float limit)
 
 void SparkBase::SetFollowerID(uint32_t id)
 {
+    if (id > std::numeric_limits<uint32_t>::max())
+    {
+        throw std::out_of_range(RED "Follower ID value is out of range." RESET);
+    }
     SetParameter(Parameter::kFollowerID, PARAM_TYPE_UINT, id);
 }
 
 void SparkBase::SetFollowerConfig(uint32_t config)
 {
+    if (config > std::numeric_limits<uint32_t>::max())
+    {
+        throw std::out_of_range(RED "Follower config value is out of range." RESET);
+    }
     SetParameter(Parameter::kFollowerConfig, PARAM_TYPE_UINT, config);
 }
 
@@ -831,6 +979,10 @@ void SparkBase::SetFollowerConfig(uint32_t config)
 
 void SparkBase::SetEncoderCountsPerRev(uint16_t counts)
 {
+    if (counts > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Encoder counts per revolution value is out of range." RESET);
+    }
     SetParameter(Parameter::kEncoderCountsPerRev, PARAM_TYPE_UINT, counts);
 }
 
@@ -863,26 +1015,46 @@ void SparkBase::SetEncoderInverted(bool inverted)
 
 void SparkBase::SetPositionConversionFactor(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Position conversion factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kPositionConversionFactor, PARAM_TYPE_FLOAT, factor);
 }
 
 void SparkBase::SetVelocityConversionFactor(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Velocity conversion factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kVelocityConversionFactor, PARAM_TYPE_FLOAT, factor);
 }
 
 void SparkBase::SetClosedLoopRampRate(float rampRate)
 {
+    if (!std::isfinite(rampRate))
+    {
+        throw std::invalid_argument(RED "Closed loop ramp rate must be a finite number." RESET);
+    }
     SetParameter(Parameter::kClosedLoopRampRate, PARAM_TYPE_FLOAT, rampRate);
 }
 
 void SparkBase::SetHallSensorSampleRate(float rate)
 {
+    if (!std::isfinite(rate))
+    {
+        throw std::invalid_argument(RED "Hall sensor sample rate must be a finite number." RESET);
+    }
     SetParameter(Parameter::kHallSensorSampleRate, PARAM_TYPE_FLOAT, rate);
 }
 
 void SparkBase::SetHallSensorAverageDepth(uint16_t depth)
 {
+    if (depth > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Hall sensor average depth value is out of range." RESET);
+    }
     SetParameter(Parameter::kHallSensorAverageDepth, PARAM_TYPE_UINT, depth);
 }
 
@@ -890,6 +1062,10 @@ void SparkBase::SetHallSensorAverageDepth(uint16_t depth)
 
 void SparkBase::SetSmartMotionMaxVelocity(uint8_t slot, float velocity)
 {
+    if (!std::isfinite(velocity))
+    {
+        throw std::invalid_argument(RED "Smart motion max velocity must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -914,6 +1090,10 @@ void SparkBase::SetSmartMotionMaxVelocity(uint8_t slot, float velocity)
 
 void SparkBase::SetSmartMotionMaxAccel(uint8_t slot, float accel)
 {
+    if (!std::isfinite(accel))
+    {
+        throw std::invalid_argument(RED "Smart motion max acceleration must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -938,6 +1118,10 @@ void SparkBase::SetSmartMotionMaxAccel(uint8_t slot, float accel)
 
 void SparkBase::SetSmartMotionMinVelOutput(uint8_t slot, float minVel)
 {
+    if (!std::isfinite(minVel))
+    {
+        throw std::invalid_argument(RED "Smart motion min velocity output must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -962,6 +1146,10 @@ void SparkBase::SetSmartMotionMinVelOutput(uint8_t slot, float minVel)
 
 void SparkBase::SetSmartMotionAllowedClosedLoopError(uint8_t slot, float error)
 {
+    if (!std::isfinite(error))
+    {
+        throw std::invalid_argument(RED "Smart motion allowed closed loop error must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -986,6 +1174,10 @@ void SparkBase::SetSmartMotionAllowedClosedLoopError(uint8_t slot, float error)
 
 void SparkBase::SetSmartMotionAccelStrategy(uint8_t slot, float strategy)
 {
+    if (!std::isfinite(strategy))
+    {
+        throw std::invalid_argument(RED "Smart motion acceleration strategy must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -1010,6 +1202,10 @@ void SparkBase::SetSmartMotionAccelStrategy(uint8_t slot, float strategy)
 
 void SparkBase::SetIMaxAccum(uint8_t slot, float maxAccum)
 {
+    if (!std::isfinite(maxAccum))
+    {
+        throw std::invalid_argument(RED "IMaxAccum value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -1034,6 +1230,10 @@ void SparkBase::SetIMaxAccum(uint8_t slot, float maxAccum)
 
 void SparkBase::SetSlot3Placeholder1(uint8_t slot, float value)
 {
+    if (!std::isfinite(value))
+    {
+        throw std::invalid_argument(RED "Slot 3 placeholder 1 value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -1058,6 +1258,10 @@ void SparkBase::SetSlot3Placeholder1(uint8_t slot, float value)
 
 void SparkBase::SetSlot3Placeholder2(uint8_t slot, float value)
 {
+    if (!std::isfinite(value))
+    {
+        throw std::invalid_argument(RED "Slot 3 placeholder 2 value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -1082,6 +1286,10 @@ void SparkBase::SetSlot3Placeholder2(uint8_t slot, float value)
 
 void SparkBase::SetSlot3Placeholder3(uint8_t slot, float value)
 {
+    if (!std::isfinite(value))
+    {
+        throw std::invalid_argument(RED "Slot 3 placeholder 3 value must be a finite number." RESET);
+    }
     Parameter param;
     switch (slot)
     {
@@ -1108,16 +1316,28 @@ void SparkBase::SetSlot3Placeholder3(uint8_t slot, float value)
 
 void SparkBase::SetAnalogPositionConversion(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Analog position conversion factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kAnalogPositionConversion, PARAM_TYPE_FLOAT, factor);
 }
 
 void SparkBase::SetAnalogVelocityConversion(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Analog velocity conversion factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kAnalogVelocityConversion, PARAM_TYPE_FLOAT, factor);
 }
 
 void SparkBase::SetAnalogAverageDepth(uint16_t depth)
 {
+    if (depth > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Analog average depth value is out of range." RESET);
+    }
     SetParameter(Parameter::kAnalogAverageDepth, PARAM_TYPE_UINT, depth);
 }
 
@@ -1139,6 +1359,10 @@ void SparkBase::SetAnalogInverted(bool inverted)
 
 void SparkBase::SetAnalogSampleDelta(uint16_t delta)
 {
+    if (delta > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Analog sample delta value is out of range." RESET);
+    }
     SetParameter(Parameter::kAnalogSampleDelta, PARAM_TYPE_UINT, delta);
 }
 
@@ -1158,6 +1382,10 @@ void SparkBase::SetDataPortConfig(uint8_t config)
 
 void SparkBase::SetAltEncoderCountsPerRev(uint16_t counts)
 {
+    if (counts > std::numeric_limits<uint16_t>::max())
+    {
+        throw std::out_of_range(RED "Alternate encoder counts per revolution value is out of range." RESET);
+    }
     SetParameter(Parameter::kAltEncoderCountsPerRev, PARAM_TYPE_UINT, counts);
 }
 
@@ -1190,11 +1418,19 @@ void SparkBase::SetAltEncoderInverted(bool inverted)
 
 void SparkBase::SetAltEncoderPositionFactor(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Alternate encoder position factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kAltEncoderPositionFactor, PARAM_TYPE_FLOAT, factor);
 }
 
 void SparkBase::SetAltEncoderVelocityFactor(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Alternate encoder velocity factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kAltEncoderVelocityFactor, PARAM_TYPE_FLOAT, factor);
 }
 
@@ -1202,11 +1438,19 @@ void SparkBase::SetAltEncoderVelocityFactor(float factor)
 
 void SparkBase::SetDutyCyclePositionFactor(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Duty cycle position factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kDutyCyclePositionFactor, PARAM_TYPE_FLOAT, factor);
 }
 
 void SparkBase::SetDutyCycleVelocityFactor(float factor)
 {
+    if (!std::isfinite(factor))
+    {
+        throw std::invalid_argument(RED "Duty cycle velocity factor must be a finite number." RESET);
+    }
     SetParameter(Parameter::kDutyCycleVelocityFactor, PARAM_TYPE_FLOAT, factor);
 }
 
@@ -1240,7 +1484,7 @@ void SparkBase::SetDutyCyclePrescalar(uint8_t prescalar)
 
 void SparkBase::SetDutyCycleZeroOffset(float offset)
 {
-    if (offset > 1)
+    if (!std::isfinite(offset) || offset > 1.0f || offset < 0.0f)
     {
         throw std::out_of_range(RED "Invalid offset. Must be between 0 and 1." RESET);
     }

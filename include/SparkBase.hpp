@@ -7,21 +7,23 @@
 #ifndef SPARKBASE_HPP
 #define SPARKBASE_HPP
 
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <map>
+#include <stdexcept>
+#include <system_error>
+#include <thread>
+#include <variant>
+
 #include <linux/can.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
-#include <array>
-#include <chrono>
-#include <cstdint>
-#include <cstring>
-#include <map>
-#include <stdexcept>
-#include <thread>
-#include <variant>
-#include <system_error>
 
 /// Coloring error messages
 #define RED "\033[31m"
