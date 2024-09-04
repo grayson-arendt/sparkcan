@@ -171,11 +171,19 @@ uint64_t SparkBase::ReadPeriodicStatus(Status period) const
     return 0;
 }
 
-void SparkBase::SetParameter(Parameter parameterId, uint8_t parameterType, std::string parameterName, std::variant<float, uint32_t, uint16_t, uint8_t, bool> value, std::optional<float> minValue, std::optional<float> maxValue, std::optional<std::string> customErrorMessage)
+void SparkBase::SetParameter(
+    Parameter parameterId,
+    uint8_t parameterType,
+    std::string parameterName,
+    std::variant<float, uint32_t, uint16_t, uint8_t, bool> value,
+    std::optional<float> minValue,
+    std::optional<float> maxValue,
+    std::optional<std::string> customErrorMessage)
 {
     uint32_t arbitrationId = 0x205C000 | (static_cast<uint32_t>(parameterId) << 6) | deviceId;
     std::array<uint8_t, 8> data = {};
 
+    // Lambda to throw range errors
     auto throwRangeError = [&](auto min, auto max)
     {
         if (customErrorMessage)
@@ -186,35 +194,45 @@ void SparkBase::SetParameter(Parameter parameterId, uint8_t parameterType, std::
 
     std::visit([&](auto &&v)
                {
-                   using T = std::decay_t<decltype(v)>;
-                   if constexpr (std::is_floating_point_v<T>)
-                   {
-                       if (!std::isfinite(v))
-                           throw std::invalid_argument(RED + parameterName + " must be a finite number." + RESET);
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, float>)
+        {
+            if (!std::isfinite(v))
+                throw std::invalid_argument(RED + parameterName + " must be a finite number." + RESET);
 
-                       if (minValue && maxValue && (v < *minValue || v > *maxValue))
-                           throwRangeError(*minValue, *maxValue);
+            if (minValue.has_value() && maxValue.has_value())
+            {
+                if (v < minValue.value() || v > maxValue.value())
+                    throwRangeError(minValue.value(), maxValue.value());
+            }
+            else
+            {
+                if (v < std::numeric_limits<float>::lowest() || v > std::numeric_limits<float>::max())
+                    throwRangeError(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max());
+            }
 
-                       std::memcpy(data.data(), &v, sizeof(v));
-                   }
-                   else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
-                   {
-                       if (minValue && maxValue)
-                       {
-                           auto typedMin = static_cast<T>(*minValue);
-                           auto typedMax = static_cast<T>(*maxValue);
-                           if (v < typedMin || v > typedMax)
-                               throwRangeError(typedMin, typedMax);
-                       }
-                       std::memcpy(data.data(), &v, sizeof(v));
-                   }
-                   else if constexpr (std::is_same_v<T, bool>)
-                   {
-                       data[0] = v ? 1 : 0;
-                   } },
-               value);
+            std::memcpy(data.data(), &v, sizeof(v));
+        }
+        else if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint8_t>)
+        {
+            if (!minValue.has_value() && !maxValue.has_value())
+            {
+                if (v < std::numeric_limits<T>::min() || v > std::numeric_limits<T>::max())
+                    throwRangeError(std::numeric_limits<T>::min(), std::numeric_limits<T>::max());
+            }
+            std::memcpy(data.data(), &v, sizeof(v));
+        }
+        else if constexpr (std::is_same_v<T, bool>)
+        {
+            data[0] = v ? 1 : 0;
+        }
+        else
+        {
+            throw std::invalid_argument(RED "Unsupported value type." RESET);
+        } }, value);
 
-    SendCanFrame(arbitrationId, 8, data);
+    data[4] = parameterType;
+    SendCanFrame(arbitrationId, 5, data);
 }
 
 void SparkBase::Heartbeat()

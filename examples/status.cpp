@@ -14,7 +14,7 @@ int main()
         SparkFlex motor("can0", 15);
         motor.SetIdleMode(1); // Brake
         motor.SetRampRate(0.1);
-        motor.SetInverted(true);
+        motor.SetInverted(false);
         motor.SetMotorKv(565);
         motor.SetEncoderCountsPerRev(7168);
         motor.SetSensorType(1);

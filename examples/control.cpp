@@ -14,7 +14,7 @@ int main()
 
         motor.SetIdleMode(1);  // Brake
         motor.SetMotorType(0); // Brushed
-        motor.SetInverted(true);
+        motor.SetInverted(false);
         motor.BurnFlash();
 
         // Loop for 5 seconds
