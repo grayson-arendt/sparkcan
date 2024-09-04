@@ -18,6 +18,8 @@ int main()
         motor.SetMotorKv(565);
         motor.SetEncoderCountsPerRev(7168);
         motor.SetSensorType(1);
+        motor.SetSmartCurrentFreeLimit(20.0);
+        motor.SetSmartCurrentStallLimit(20.0);
         motor.BurnFlash();
 
         // Loop for 10 seconds
@@ -26,7 +28,7 @@ int main()
                    .count() < 10)
         {
             motor.Heartbeat();
-            motor.SetAppliedOutput(0.1);
+            motor.SetAppliedOutput(0.2);
 
             std::cout << std::fixed << std::setprecision(2);
 
