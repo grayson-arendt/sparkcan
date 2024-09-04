@@ -225,6 +225,7 @@ class SparkBase
 {
 private:
     int soc;                  ///< Socket descriptor for CAN communication
+    std::string interfaceName; ///< Name of the CAN interface
     uint8_t deviceId;         ///< Device ID for the SPARK controller on the CAN bus
     struct sockaddr_can addr; ///< Socket address for the CAN interface
     struct ifreq ifr;         ///< Interface request structure for CAN operations

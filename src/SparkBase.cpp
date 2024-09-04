@@ -7,7 +7,7 @@
 #include "SparkBase.hpp"
 
 SparkBase::SparkBase(const std::string &interfaceName, uint8_t deviceId)
-    : deviceId(deviceId), soc(-1)
+    : interfaceName(interfaceName), deviceId(deviceId), soc(-1)
 {
     if (deviceId > 62)
     {
@@ -21,7 +21,7 @@ SparkBase::SparkBase(const std::string &interfaceName, uint8_t deviceId)
                                 std::string(RED) + "Socket creation failed: " + strerror(errno) +
                                     "\nPossible causes:\n"
                                     "1. CAN modules not loaded (run 'sudo modprobe can' and 'sudo modprobe can_raw')\n"
-                                    "2. System resource limitations\n" +
+                                    "2. System resource limitations" +
                                     std::string(RESET));
     }
 
@@ -33,11 +33,11 @@ SparkBase::SparkBase(const std::string &interfaceName, uint8_t deviceId)
         throw std::runtime_error(std::string(RED) + "IOCTL failed: " + std::string(strerror(errno)) +
                                  "\nPossible causes:\n"
                                  "1. CAN interface '" +
-                                 interfaceName + "' does not exist\n"
-                                                 "2. CAN interface is not up (run 'sudo ip link set " +
-                                 interfaceName + " up')\n"
-                                                 "3. CAN bus not initialized (run 'sudo ip link set " +
-                                 interfaceName + " type can bitrate 1000000')\n" +
+                                 interfaceName + "' does not exist (check cable connection)\n"
+                                                 "2. CAN bus not initialized (run 'sudo ip link set " +
+                                 interfaceName + " type can bitrate 1000000)\n"
+                                                 "3. CAN interface is not up (run 'sudo ip link set " +
+                                 interfaceName + " up')" +
                                  std::string(RESET));
     }
 
@@ -78,7 +78,11 @@ void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc, const std::array<ui
                 std::this_thread::sleep_for(WAIT_TIME);
                 continue;
             }
-            throw std::runtime_error(std::string(RED) + "Error sending CAN frame: " + std::string(strerror(errno)) + std::string(RESET));
+            throw std::runtime_error(std::string(RED) + "Failed to send CAN frame: " + std::string(strerror(errno)) +
+                                     "\nPossible causes:\n"
+                                     "1. CAN bus not initialized (run 'sudo ip link set " +
+                                     interfaceName + " type can bitrate 1000000')\n" + "2. CAN interface is not up (run 'sudo ip link set " +
+                                     interfaceName + " up')" + std::string(RESET));
         }
     }
     throw std::runtime_error(RED "Failed to send CAN frame: Buffer consistently full." RESET);
