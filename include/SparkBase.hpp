@@ -51,6 +51,7 @@ enum class SystemControl : uint32_t
  */
 enum class MotorControl : uint32_t
 {
+    Setpoint = 0x2050040,
     AppliedOutput = 0x2050080,
     Velocity = 0x2050480,
     SmartVelocity = 0x20504C0,
@@ -233,9 +234,6 @@ private:
                      std::pair<uint64_t, std::chrono::steady_clock::time_point>>
         cachedStatus; ///< Cache for periodic status data
 
-    float analogPositionConversion = 128.0f; ///< Analog position conversion factor, default value is 128.0
-    float analogVelocityConversion = 1.0f;   ///< Analog velocity conversion factor, default value is 1.0
-
     /**
      * @brief Sends a CAN frame
      *
@@ -363,53 +361,51 @@ public:
 
     // MotorControl Methods //
 
+     /**
+     * @brief Sets the value for the currently set control type
+     * @param setpoint The desired value
+     */
+    void SetSetpoint(float setpoint);
+
     /**
      * @brief Sets the motor's applied output
      * @param appliedOutput The desired applied output, range: [-1.0, 1.0]
-     * @throws std::invalid_argument if appliedOutput is not finite
-     * @throws std::out_of_range if appliedOutput is outside the range [-1.0, 1.0]
      */
     void SetAppliedOutput(float appliedOutput);
 
     /**
      * @brief Sets the motor's velocity
      * @param velocity The desired velocity
-     * @throws std::invalid_argument if velocity is not a finite number
      */
     void SetVelocity(float velocity);
 
     /**
      * @brief Sets the motor's smart velocity
      * @param smartVelocity The desired smart velocity
-     * @throws std::invalid_argument if smartVelocity is not a finite number
      */
     void SetSmartVelocity(float smartVelocity);
 
     /**
      * @brief Sets the motor's position
      * @param position The desired position
-     * @throws std::invalid_argument if position is not a finite number
      */
     void SetPosition(float position);
 
     /**
      * @brief Sets the motor's voltage
      * @param voltage The desired voltage
-     * @throws std::invalid_argument if voltage is not a finite number
      */
     void SetVoltage(float voltage);
 
     /**
      * @brief Sets the motor's current
      * @param current The desired current
-     * @throws std::invalid_argument if current is not a finite number
      */
     void SetCurrent(float current);
 
     /**
      * @brief Sets the motor's smart motion
      * @param smartMotion The desired smart motion value
-     * @throws std::invalid_argument if smartMotion is not a finite number
      */
     void SetSmartMotion(float smartMotion);
 

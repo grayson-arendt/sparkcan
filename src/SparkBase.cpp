@@ -303,6 +303,11 @@ void SparkBase::ClearStickyFaults()
 
 // MotorControl //
 
+void SparkBase::SetSetpoint(float setpoint)
+{
+    SendControlMessage(MotorControl::Setpoint, "Setpoint", setpoint);
+}
+
 void SparkBase::SetAppliedOutput(float appliedOutput)
 {
     SendControlMessage(MotorControl::AppliedOutput, "Applied Output", appliedOutput, -1.0f, 1.0f);
@@ -431,14 +436,14 @@ float SparkBase::GetAnalogVelocity() const
     uint64_t status = ReadPeriodicStatus(Status::Period3);
     uint32_t analogVelocity = (status >> 10) & 0x3FFFFF;
 
-    return static_cast<float>(analogVelocity) / analogVelocityConversion;
+    return static_cast<float>(analogVelocity) / 1.0f;
 }
 
 
 float SparkBase::GetAnalogPosition() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period3);
-    return *reinterpret_cast<const float *>(&status) / analogPositionConversion;
+    return *reinterpret_cast<const float *>(&status) / 128.0f;
 }
 
 // Period 4 //
@@ -963,13 +968,11 @@ void SparkBase::SetSlot3Placeholder3(uint8_t slot, float value)
 void SparkBase::SetAnalogPositionConversion(float factor)
 {
     SetParameter(Parameter::kAnalogPositionConversion, PARAM_TYPE_FLOAT, "Analog Position Conversion", factor);
-    analogPositionConversion = factor;
 }
 
 void SparkBase::SetAnalogVelocityConversion(float factor)
 {
     SetParameter(Parameter::kAnalogVelocityConversion, PARAM_TYPE_FLOAT, "Analog Velocity Conversion", factor);
-    analogVelocityConversion = factor;
 }
 
 void SparkBase::SetAnalogAverageDepth(uint16_t depth)
