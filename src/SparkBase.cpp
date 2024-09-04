@@ -564,194 +564,130 @@ void SparkBase::SetSmartCurrentConfig(uint16_t config)
 
 void SparkBase::SetP(uint8_t slot, float p)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kP_0,
+        Parameter::kP_1,
+        Parameter::kP_2,
+        Parameter::kP_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kP_0;
-        break;
-    case 1:
-        param = Parameter::kP_1;
-        break;
-    case 2:
-        param = Parameter::kP_2;
-        break;
-    case 3:
-        param = Parameter::kP_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "P", p);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "P", p);
 }
 
 void SparkBase::SetI(uint8_t slot, float i)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kI_0,
+        Parameter::kI_1,
+        Parameter::kI_2,
+        Parameter::kI_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kI_0;
-        break;
-    case 1:
-        param = Parameter::kI_1;
-        break;
-    case 2:
-        param = Parameter::kI_2;
-        break;
-    case 3:
-        param = Parameter::kI_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "I", i);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "I", i);
 }
 
 void SparkBase::SetD(uint8_t slot, float d)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kD_0,
+        Parameter::kD_1,
+        Parameter::kD_2,
+        Parameter::kD_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kD_0;
-        break;
-    case 1:
-        param = Parameter::kD_1;
-        break;
-    case 2:
-        param = Parameter::kD_2;
-        break;
-    case 3:
-        param = Parameter::kD_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "D", d);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "D", d);
 }
 
 void SparkBase::SetF(uint8_t slot, float f)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kF_0,
+        Parameter::kF_1,
+        Parameter::kF_2,
+        Parameter::kF_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kF_0;
-        break;
-    case 1:
-        param = Parameter::kF_1;
-        break;
-    case 2:
-        param = Parameter::kF_2;
-        break;
-    case 3:
-        param = Parameter::kF_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "F", f);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "F", f);
 }
 
 void SparkBase::SetIZone(uint8_t slot, float iZone)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kIZone_0,
+        Parameter::kIZone_1,
+        Parameter::kIZone_2,
+        Parameter::kIZone_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kIZone_0;
-        break;
-    case 1:
-        param = Parameter::kIZone_1;
-        break;
-    case 2:
-        param = Parameter::kIZone_2;
-        break;
-    case 3:
-        param = Parameter::kIZone_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "IZone", iZone);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "IZone", iZone);
 }
 
 void SparkBase::SetDFilter(uint8_t slot, float dFilter)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kDFilter_0,
+        Parameter::kDFilter_1,
+        Parameter::kDFilter_2,
+        Parameter::kDFilter_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kDFilter_0;
-        break;
-    case 1:
-        param = Parameter::kDFilter_1;
-        break;
-    case 2:
-        param = Parameter::kDFilter_2;
-        break;
-    case 3:
-        param = Parameter::kDFilter_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "DFilter", dFilter);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "DFilter", dFilter);
 }
 
 void SparkBase::SetOutputMin(uint8_t slot, float min)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kOutputMin_0,
+        Parameter::kOutputMin_1,
+        Parameter::kOutputMin_2,
+        Parameter::kOutputMin_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kOutputMin_0;
-        break;
-    case 1:
-        param = Parameter::kOutputMin_1;
-        break;
-    case 2:
-        param = Parameter::kOutputMin_2;
-        break;
-    case 3:
-        param = Parameter::kOutputMin_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "Output Min", min);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Output Min", min);
 }
 
 void SparkBase::SetOutputMax(uint8_t slot, float max)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kOutputMax_0,
+        Parameter::kOutputMax_1,
+        Parameter::kOutputMax_2,
+        Parameter::kOutputMax_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kOutputMax_0;
-        break;
-    case 1:
-        param = Parameter::kOutputMax_1;
-        break;
-    case 2:
-        param = Parameter::kOutputMax_2;
-        break;
-    case 3:
-        param = Parameter::kOutputMax_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "Output Max", max);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Output Max", max);
 }
 
 // Limits //
@@ -859,98 +795,66 @@ void SparkBase::SetHallSensorAverageDepth(uint16_t depth)
 
 void SparkBase::SetSmartMotionMaxVelocity(uint8_t slot, float maxVel)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSmartMotionMaxVelocity_0,
+        Parameter::kSmartMotionMaxVelocity_1,
+        Parameter::kSmartMotionMaxVelocity_2,
+        Parameter::kSmartMotionMaxVelocity_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kSmartMotionMaxVelocity_0;
-        break;
-    case 1:
-        param = Parameter::kSmartMotionMaxVelocity_1;
-        break;
-    case 2:
-        param = Parameter::kSmartMotionMaxVelocity_2;
-        break;
-    case 3:
-        param = Parameter::kSmartMotionMaxVelocity_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Max Velocity", maxVel);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Smart Motion Max Velocity", maxVel);
 }
 
 void SparkBase::SetSmartMotionMaxAccel(uint8_t slot, float maxAccel)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSmartMotionMaxAccel_0,
+        Parameter::kSmartMotionMaxAccel_1,
+        Parameter::kSmartMotionMaxAccel_2,
+        Parameter::kSmartMotionMaxAccel_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kSmartMotionMaxAccel_0;
-        break;
-    case 1:
-        param = Parameter::kSmartMotionMaxAccel_1;
-        break;
-    case 2:
-        param = Parameter::kSmartMotionMaxAccel_2;
-        break;
-    case 3:
-        param = Parameter::kSmartMotionMaxAccel_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Max Accel", maxAccel);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Smart Motion Max Accel", maxAccel);
 }
 
 void SparkBase::SetSmartMotionMinVelOutput(uint8_t slot, float minVel)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSmartMotionMinVelOutput_0,
+        Parameter::kSmartMotionMinVelOutput_1,
+        Parameter::kSmartMotionMinVelOutput_2,
+        Parameter::kSmartMotionMinVelOutput_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kSmartMotionMinVelOutput_0;
-        break;
-    case 1:
-        param = Parameter::kSmartMotionMinVelOutput_1;
-        break;
-    case 2:
-        param = Parameter::kSmartMotionMinVelOutput_2;
-        break;
-    case 3:
-        param = Parameter::kSmartMotionMinVelOutput_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Min Vel Output", minVel);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Smart Motion Min Vel Output", minVel);
 }
 
 void SparkBase::SetSmartMotionAllowedClosedLoopError(uint8_t slot, float error)
 {
-    Parameter param;
-    switch (slot)
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSmartMotionAllowedClosedLoopError_0,
+        Parameter::kSmartMotionAllowedClosedLoopError_1,
+        Parameter::kSmartMotionAllowedClosedLoopError_2,
+        Parameter::kSmartMotionAllowedClosedLoopError_3};
+
+    if (slot >= params.size())
     {
-    case 0:
-        param = Parameter::kSmartMotionAllowedClosedLoopError_0;
-        break;
-    case 1:
-        param = Parameter::kSmartMotionAllowedClosedLoopError_1;
-        break;
-    case 2:
-        param = Parameter::kSmartMotionAllowedClosedLoopError_2;
-        break;
-    case 3:
-        param = Parameter::kSmartMotionAllowedClosedLoopError_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Allowed Close Loop Error", error);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Smart Motion Allowed Close Loop Error", error);
 }
 
 void SparkBase::SetSmartMotionAccelStrategy(uint8_t slot, float strategy)
