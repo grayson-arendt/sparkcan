@@ -18,6 +18,14 @@ target_include_directories(sparkcan PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
+# Define the executables
+add_executable(example_control examples/control.cpp)
+add_executable(example_status examples/status.cpp)
+
+# Link the executables with the sparkmax-can library
+target_link_libraries(example_control PRIVATE sparkcan)
+target_link_libraries(example_status PRIVATE sparkcan)
+
 # Install the library
 install(TARGETS sparkcan
     EXPORT sparkcanTargets

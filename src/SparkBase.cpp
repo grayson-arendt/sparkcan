@@ -11,62 +11,66 @@ SparkBase::SparkBase(const std::string &interfaceName, uint8_t deviceId)
 {
     if (deviceId > 62)
     {
-        throw std::out_of_range(
-            RED "Invalid CAN bus ID. Must be between 0 and 62." RESET);
+        throw std::out_of_range(RED "Invalid CAN bus ID. Must be between 0 and 62." RESET);
     }
 
     soc = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-
     if (soc < 0)
     {
         throw std::system_error(errno, std::generic_category(),
-                                std::string(RED) + "Socket creation failed: " + strerror(errno) + std::string(RESET));
+                                std::string(RED) + "Socket creation failed: " + strerror(errno) +
+                                    "\nPossible causes:\n"
+                                    "1. CAN modules not loaded (run 'sudo modprobe can' and 'sudo modprobe can_raw')\n"
+                                    "2. System resource limitations\n" +
+                                    std::string(RESET));
     }
 
     std::memset(&ifr, 0, sizeof(ifr));
     std::strncpy(ifr.ifr_name, interfaceName.c_str(), sizeof(ifr.ifr_name) - 1);
-
     if (ioctl(soc, SIOCGIFINDEX, &ifr) < 0)
     {
         close(soc);
-        throw std::runtime_error(std::string(RED) + "IOCTL failed: " + std::string(strerror(errno)) + std::string(RESET));
+        throw std::runtime_error(std::string(RED) + "IOCTL failed: " + std::string(strerror(errno)) +
+                                 "\nPossible causes:\n"
+                                 "1. CAN interface '" +
+                                 interfaceName + "' does not exist\n"
+                                                 "2. CAN interface is not up (run 'sudo ip link set " +
+                                 interfaceName + " up')\n"
+                                                 "3. CAN bus not initialized (run 'sudo ip link set " +
+                                 interfaceName + " type can bitrate 1000000')\n" +
+                                 std::string(RESET));
     }
 
     addr.can_family = AF_CAN;
     addr.can_ifindex = ifr.ifr_ifindex;
-
     if (bind(soc, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
         close(soc);
-        throw std::runtime_error(std::string(RED) + "Binding to interface failed: " +
-                                 std::string(strerror(errno)) + std::string(RESET));
+        throw std::runtime_error(std::string(RED) + "Binding to interface failed: " + std::string(strerror(errno)) +
+                                 "\nPossible cause: Another program is already bound to this interface\n" +
+                                 std::string(RESET));
     }
 }
 
 SparkBase::~SparkBase() { close(soc); }
 
-void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc,
-                             const std::array<uint8_t, 8> &data) const
+void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc, const std::array<uint8_t, 8> &data) const
 {
     struct can_frame frame = {};
-
     frame.can_id = deviceId | CAN_EFF_FLAG;
     frame.can_dlc = dlc;
-
     std::memcpy(frame.data, data.data(), dlc);
 
-    const std::chrono::milliseconds WAIT_TIME(1);
-    const int MAX_ATTEMPTS = 1000;
+    constexpr std::chrono::milliseconds WAIT_TIME(1);
+    constexpr int MAX_ATTEMPTS = 1000;
 
     for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt)
     {
         ssize_t bytesSent = write(soc, &frame, sizeof(frame));
-
         if (bytesSent == sizeof(frame))
         {
             return;
         }
-
         if (bytesSent < 0)
         {
             if (errno == ENOBUFS || errno == EAGAIN)
@@ -74,38 +78,36 @@ void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc,
                 std::this_thread::sleep_for(WAIT_TIME);
                 continue;
             }
-            throw std::runtime_error(std::string(RED) + "Error sending CAN frame: " +
-                                     std::string(strerror(errno)) + std::string(RESET));
+            throw std::runtime_error(std::string(RED) + "Error sending CAN frame: " + std::string(strerror(errno)) + std::string(RESET));
         }
     }
-
-    throw std::runtime_error(
-        RED "Failed to send CAN frame: Buffer consistently full." RESET);
+    throw std::runtime_error(RED "Failed to send CAN frame: Buffer consistently full." RESET);
 }
 
-void SparkBase::SendControlMessage(
-    std::variant<MotorControl, SystemControl> command, float value)
+void SparkBase::SendControlMessage(std::variant<MotorControl, SystemControl> command, std::string commandName, float value, std::optional<float> minValue, std::optional<float> maxValue) const
 {
     if (!std::isfinite(value))
     {
-        throw std::invalid_argument(RED "Control value must be a finite number." RESET);
+        throw std::invalid_argument(RED + commandName + " must be a finite number." + RESET);
+    }
+
+    if (minValue && maxValue && (value < *minValue || value > *maxValue))
+    {
+        throw std::out_of_range(RED + commandName + " must be between " + std::to_string(*minValue) + " and " + std::to_string(*maxValue) + RESET);
     }
 
     uint32_t arbitrationId = 0;
     uint32_t valueBits;
     std::array<uint8_t, 8> data = {};
 
-    std::visit(
-        [&](auto &&cmd)
-        {
-            using T = std::decay_t<decltype(cmd)>;
-            if constexpr (std::is_same_v<T, MotorControl> ||
-                          std::is_same_v<T, SystemControl>)
-            {
-                arbitrationId = static_cast<uint32_t>(cmd) + deviceId;
-            }
-        },
-        command);
+    std::visit([&](auto &&cmd)
+               {
+                   using T = std::decay_t<decltype(cmd)>;
+                   if constexpr (std::is_same_v<T, MotorControl> || std::is_same_v<T, SystemControl>)
+                   {
+                       arbitrationId = static_cast<uint32_t>(cmd) + deviceId;
+                   } },
+               command);
 
     std::memcpy(&valueBits, &value, sizeof(valueBits));
     std::memcpy(data.data(), &valueBits, sizeof(valueBits));
@@ -115,8 +117,8 @@ void SparkBase::SendControlMessage(
 
 uint64_t SparkBase::ReadPeriodicStatus(Status period) const
 {
-    const int CACHE_TIMEOUT_MS = 100;
-    const int READ_TIMEOUT_US = 20000;
+    constexpr int CACHE_TIMEOUT_MS = 100;
+    constexpr int READ_TIMEOUT_US = 20000;
 
     auto now = std::chrono::steady_clock::now();
     auto it = cachedStatus.find(period);
@@ -165,52 +167,50 @@ uint64_t SparkBase::ReadPeriodicStatus(Status period) const
     return 0;
 }
 
-void SparkBase::SetParameter(
-    Parameter parameterId, uint8_t parameterType,
-    std::variant<float, uint32_t, uint16_t, uint8_t, bool> value)
+void SparkBase::SetParameter(Parameter parameterId, uint8_t parameterType, std::string parameterName, std::variant<float, uint32_t, uint16_t, uint8_t, bool> value, std::optional<float> minValue, std::optional<float> maxValue, std::optional<std::string> customErrorMessage)
 {
     uint32_t arbitrationId = 0x205C000 | (static_cast<uint32_t>(parameterId) << 6) | deviceId;
-
     std::array<uint8_t, 8> data = {};
 
-    std::visit(
-        [&](auto &&v)
-        {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, float>)
-            {
-                if (!std::isfinite(v))
-                {
-                    throw std::invalid_argument(RED "Parameter value must be a finite number." RESET);
-                }
-                std::memcpy(data.data(), &v, sizeof(v));
-            }
-            else if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint16_t>)
-            {
-                if (v > std::numeric_limits<T>::max())
-                {
-                    throw std::out_of_range(RED "Parameter value is out of valid range." RESET);
-                }
-                std::memcpy(data.data(), &v, sizeof(v));
-            }
-            else if constexpr (std::is_same_v<T, uint8_t>)
-            {
-                data[0] = v;
-            }
-            else if constexpr (std::is_same_v<T, bool>)
-            {
-                data[0] = v ? 1 : 0;
-            }
-            else
-            {
-                throw std::invalid_argument(RED "Invalid parameter type." RESET);
-            }
-        },
-        value);
+    auto throwRangeError = [&](auto min, auto max)
+    {
+        if (customErrorMessage)
+            throw std::out_of_range(RED + *customErrorMessage + RESET);
+        else
+            throw std::out_of_range(RED + parameterName + " must be between " + std::to_string(min) + " and " + std::to_string(max) + RESET);
+    };
 
-    data[4] = parameterType;
+    std::visit([&](auto &&v)
+               {
+                   using T = std::decay_t<decltype(v)>;
+                   if constexpr (std::is_floating_point_v<T>)
+                   {
+                       if (!std::isfinite(v))
+                           throw std::invalid_argument(RED + parameterName + " must be a finite number." + RESET);
 
-    SendCanFrame(arbitrationId, 5, data);
+                       if (minValue && maxValue && (v < *minValue || v > *maxValue))
+                           throwRangeError(*minValue, *maxValue);
+
+                       std::memcpy(data.data(), &v, sizeof(v));
+                   }
+                   else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+                   {
+                       if (minValue && maxValue)
+                       {
+                           auto typedMin = static_cast<T>(*minValue);
+                           auto typedMax = static_cast<T>(*maxValue);
+                           if (v < typedMin || v > typedMax)
+                               throwRangeError(typedMin, typedMax);
+                       }
+                       std::memcpy(data.data(), &v, sizeof(v));
+                   }
+                   else if constexpr (std::is_same_v<T, bool>)
+                   {
+                       data[0] = v ? 1 : 0;
+                   } },
+               value);
+
+    SendCanFrame(arbitrationId, 8, data);
 }
 
 void SparkBase::Heartbeat()
@@ -271,78 +271,49 @@ void SparkBase::Identify()
 
 void SparkBase::ResetFaults()
 {
-    SendControlMessage(SystemControl::ResetFaults, 0.0f);
+    SendControlMessage(SystemControl::ResetFaults, "ResetFaults", 0.0f);
 }
 
 void SparkBase::ClearStickyFaults()
 {
-    SendControlMessage(SystemControl::ClearStickyFaults, 0.0f);
+    SendControlMessage(SystemControl::ClearStickyFaults, "ClearStickyFaults", 0.0f);
 }
 
 // MotorControl //
 
 void SparkBase::SetAppliedOutput(float appliedOutput)
 {
-    if (appliedOutput < -1.0f || appliedOutput > 1.0f || !std::isfinite(appliedOutput))
-    {
-        throw std::out_of_range(RED "Applied output must be a finite number between -1.0 and 1.0." RESET);
-    }
-
-    SendControlMessage(MotorControl::AppliedOutput, appliedOutput);
+    SendControlMessage(MotorControl::AppliedOutput, "Applied Output", appliedOutput, -1.0f, 1.0f);
 }
 
 void SparkBase::SetVelocity(float velocity)
 {
-    if (!std::isfinite(velocity))
-    {
-        throw std::invalid_argument(RED "Velocity must be a finite number." RESET);
-    }
-    SendControlMessage(MotorControl::Velocity, velocity);
+    SendControlMessage(MotorControl::Velocity, "Velocity", velocity);
 }
 
 void SparkBase::SetSmartVelocity(float smartVelocity)
 {
-    if (!std::isfinite(smartVelocity))
-    {
-        throw std::invalid_argument(RED "Smart velocity must be a finite number." RESET);
-    }
-    SendControlMessage(MotorControl::SmartVelocity, smartVelocity);
+    SendControlMessage(MotorControl::SmartVelocity, "Smart Velocity", smartVelocity);
 }
 
 void SparkBase::SetPosition(float position)
 {
-    if (!std::isfinite(position))
-    {
-        throw std::invalid_argument(RED "Position must be a finite number." RESET);
-    }
-    SendControlMessage(MotorControl::Position, position);
+    SendControlMessage(MotorControl::Position, "Position", position);
 }
 
 void SparkBase::SetVoltage(float voltage)
 {
-    if (!std::isfinite(voltage))
-    {
-        throw std::invalid_argument(RED "Voltage must be a finite number." RESET);
-    }
-    SendControlMessage(MotorControl::Voltage, voltage);
+    SendControlMessage(MotorControl::Voltage, "Voltage", voltage);
 }
 
 void SparkBase::SetCurrent(float current)
 {
-    if (!std::isfinite(current))
-    {
-        throw std::invalid_argument(RED "Current must be a finite number." RESET);
-    }
-    SendControlMessage(MotorControl::Current, current);
+    SendControlMessage(MotorControl::Current, "Current", current);
 }
 
 void SparkBase::SetSmartMotion(float smartMotion)
 {
-    if (!std::isfinite(smartMotion))
-    {
-        throw std::invalid_argument(RED "Smart motion must be a finite number." RESET);
-    }
-    SendControlMessage(MotorControl::SmartMotion, smartMotion);
+    SendControlMessage(MotorControl::SmartMotion, "Smart Motion", smartMotion);
 }
 
 // Status //
@@ -440,13 +411,13 @@ float SparkBase::GetAnalogVelocity() const
     if (analogVelocity & 0x200000) // Sign extend if negative
         analogVelocity |= 0xFFC00000;
 
-    return static_cast<float>(analogVelocity) / 128.0f;
+    return static_cast<float>(analogVelocity) / analogVelocityConversion;
 }
 
 float SparkBase::GetAnalogPosition() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period3);
-    return *reinterpret_cast<const float *>(&status);
+    return *reinterpret_cast<const float *>(&status) / analogPositionConversion;
 }
 
 // Period 4 //
@@ -468,225 +439,131 @@ float SparkBase::GetAlternateEncoderPosition() const
 
 void SparkBase::SetMotorType(uint8_t type)
 {
-    if (type > 1)
-    {
-        throw std::invalid_argument(
-            RED "Invalid motor type. Must be 0 (Brushed) or 1 (Brushless)." RESET);
-    }
-
-    SetParameter(Parameter::kMotorType, PARAM_TYPE_UINT, type);
+    SetParameter(Parameter::kMotorType, PARAM_TYPE_UINT, "Motor Type", type, 0, 1,
+                 "Invalid motor type. Must be 0 (Brushed) or 1 (Brushless).");
 }
 
 void SparkBase::SetSensorType(uint8_t type)
 {
-    if (type > 2)
-    {
-        throw std::out_of_range(
-            RED "Invalid sensor type. Must be 0 (No Sensor), 1 "
-                "(Hall Sensor), or 2 (Encoder)." RESET);
-    }
-
-    SetParameter(Parameter::kSensorType, PARAM_TYPE_UINT, type);
+    SetParameter(Parameter::kSensorType, PARAM_TYPE_UINT, "Sensor Type", type, 0, 2,
+                 "Invalid sensor type. Must be 0 (No Sensor), 1 (Hall Sensor), or 2 (Encoder).");
 }
 
 void SparkBase::SetIdleMode(uint8_t mode)
 {
-    if (mode > 1)
-    {
-        throw std::out_of_range(
-            RED "Invalid idle mode. Must be 0 (Coast) or 1 (Brake)." RESET);
-    }
-
-    SetParameter(Parameter::kIdleMode, PARAM_TYPE_UINT, mode);
+    SetParameter(Parameter::kIdleMode, PARAM_TYPE_UINT, "Idle Mode", mode, 0, 1,
+                 "Invalid idle mode. Must be 0 (Coast) or 1 (Brake).");
 }
 
 void SparkBase::SetInputDeadband(float deadband)
 {
-    if (!std::isfinite(deadband))
-    {
-        throw std::invalid_argument(RED "Input deadband must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kInputDeadband, PARAM_TYPE_FLOAT, deadband);
+    SetParameter(Parameter::kInputDeadband, PARAM_TYPE_FLOAT, "Input Deadband", deadband);
 }
 
 void SparkBase::SetInverted(bool inverted)
 {
-    SetParameter(Parameter::kInverted, PARAM_TYPE_BOOL, inverted);
+    SetParameter(Parameter::kInverted, PARAM_TYPE_BOOL, "Inverted", inverted);
 }
 
 void SparkBase::SetRampRate(float rate)
 {
-    if (!std::isfinite(rate))
-    {
-        throw std::invalid_argument(RED "Ramp rate must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kRampRate, PARAM_TYPE_FLOAT, rate);
+    SetParameter(Parameter::kRampRate, PARAM_TYPE_FLOAT, "Ramp Rate", rate);
 }
 
 // Advanced //
 
 void SparkBase::SetMotorKv(uint16_t kv)
 {
-    if (kv > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Motor Kv value is out of range." RESET);
-    }
-    SetParameter(Parameter::kMotorKv, PARAM_TYPE_UINT, kv);
+    SetParameter(Parameter::kMotorKv, PARAM_TYPE_UINT, "Motor Kv", kv);
 }
 
 void SparkBase::SetMotorR(uint16_t r)
 {
-    if (r > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Motor resistance value is out of range." RESET);
-    }
-    SetParameter(Parameter::kMotorR, PARAM_TYPE_UINT, r);
+    SetParameter(Parameter::kMotorR, PARAM_TYPE_UINT, "Motor Resistance", r);
 }
 
 void SparkBase::SetMotorL(uint16_t l)
 {
-    if (l > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Motor inductance value is out of range." RESET);
-    }
-    SetParameter(Parameter::kMotorL, PARAM_TYPE_UINT, l);
+    SetParameter(Parameter::kMotorL, PARAM_TYPE_UINT, "Motor Inductance", l);
 }
 
 // Closed Loop //
 
 void SparkBase::SetCtrlType(uint8_t type)
 {
-    if (type > 3)
-    {
-        throw std::out_of_range(
-            RED "Invalid control type. Must be 0 (Duty Cycle), "
-                "1 (Velocity), 2 (Voltage), or 3 (Position)." RESET);
-    }
-
-    SetParameter(Parameter::kCtrlType, PARAM_TYPE_UINT, type);
+    SetParameter(Parameter::kCtrlType, PARAM_TYPE_UINT, "Control Type", type, 0, 3,
+                 "Invalid control type. Must be 0 (Duty Cycle), 1 (Velocity), 2 (Voltage), or 3 (Position).");
 }
 
 void SparkBase::SetFeedbackSensorPID0(uint16_t sensor)
 {
-    if (sensor > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Feedback sensor PID0 value is out of range." RESET);
-    }
-    SetParameter(Parameter::kFeedbackSensorPID0, PARAM_TYPE_UINT, sensor);
+    SetParameter(Parameter::kFeedbackSensorPID0, PARAM_TYPE_UINT, "Feedback Sensor PID0", sensor);
 }
 
 void SparkBase::SetClosedLoopVoltageMode(uint8_t mode)
 {
-    if (mode > 2)
-    {
-        throw std::out_of_range(
-            RED "Invalid closed loop voltage mode. Must be 0 (Disabled), 1 (Control "
-                "Loop Voltage "
-                "Output Mode) or 2 (Voltage Compensation Mode)." RESET);
-    }
-
-    SetParameter(Parameter::kClosedLoopVoltageMode, PARAM_TYPE_UINT, mode);
+    SetParameter(Parameter::kClosedLoopVoltageMode, PARAM_TYPE_UINT, "Closed Loop Voltage Mode", mode, 0, 2,
+                 "Invalid closed loop voltage mode. Must be 0 (Disabled), 1 (Control Loop Voltage Output Mode) or 2 (Voltage Compensation Mode).");
 }
 
 void SparkBase::SetCompensatedNominalVoltage(float voltage)
 {
-    if (!std::isfinite(voltage))
-    {
-        throw std::invalid_argument(RED "Compensated nominal voltage must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kCompensatedNominalVoltage, PARAM_TYPE_FLOAT, voltage);
+    SetParameter(Parameter::kCompensatedNominalVoltage, PARAM_TYPE_FLOAT, "Compensated Nominal Voltage", voltage);
 }
 
 void SparkBase::SetPositionPIDWrapEnable(bool enable)
 {
-    SetParameter(Parameter::kPositionPIDWrapEnable, PARAM_TYPE_BOOL, enable);
+    SetParameter(Parameter::kPositionPIDWrapEnable, PARAM_TYPE_BOOL, "Position PID Wrap Enable", enable);
 }
 
 void SparkBase::SetPositionPIDMinInput(float minInput)
 {
-    if (!std::isfinite(minInput))
-    {
-        throw std::invalid_argument(RED "Position PID min input must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kPositionPIDMinInput, PARAM_TYPE_FLOAT, minInput);
+    SetParameter(Parameter::kPositionPIDMinInput, PARAM_TYPE_FLOAT, "Position PID Min Input", minInput);
 }
 
 void SparkBase::SetPositionPIDMaxInput(float maxInput)
 {
-    if (!std::isfinite(maxInput))
-    {
-        throw std::invalid_argument(RED "Position PID max input must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kPositionPIDMaxInput, PARAM_TYPE_FLOAT, maxInput);
+    SetParameter(Parameter::kPositionPIDMaxInput, PARAM_TYPE_FLOAT, "Position PID Max Input", maxInput);
 }
 
 // Brushless //
 
 void SparkBase::SetPolePairs(uint16_t pairs)
 {
-    if (pairs > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Pole pairs value is out of range." RESET);
-    }
-    SetParameter(Parameter::kPolePairs, PARAM_TYPE_UINT, pairs);
+    SetParameter(Parameter::kPolePairs, PARAM_TYPE_UINT, "Pole Pairs", pairs);
 }
 
 // Current Limit //
 
 void SparkBase::SetCurrentChop(float chop)
 {
-    if (!std::isfinite(chop) || chop > 125.0f)
-    {
-        throw std::out_of_range(RED "Invalid current chop. Max value is 125." RESET);
-    }
-
-    SetParameter(Parameter::kCurrentChop, PARAM_TYPE_FLOAT, chop);
+    SetParameter(Parameter::kCurrentChop, PARAM_TYPE_FLOAT, "Current Chop", chop, 0, 125);
 }
 
 void SparkBase::SetCurrentChopCycles(uint16_t cycles)
 {
-    if (cycles > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Current chop cycles value is out of range." RESET);
-    }
-    SetParameter(Parameter::kCurrentChopCycles, PARAM_TYPE_UINT, cycles);
+    SetParameter(Parameter::kCurrentChopCycles, PARAM_TYPE_UINT, "Current Chop Cycles", cycles);
 }
 
 void SparkBase::SetSmartCurrentStallLimit(uint16_t limit)
 {
-    if (limit > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Smart current stall limit value is out of range." RESET);
-    }
-    SetParameter(Parameter::kSmartCurrentStallLimit, PARAM_TYPE_UINT, limit);
+    SetParameter(Parameter::kSmartCurrentStallLimit, PARAM_TYPE_UINT, "Smart Current Stall Limit", limit);
 }
 
 void SparkBase::SetSmartCurrentFreeLimit(uint16_t limit)
 {
-    if (limit > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Smart current free limit value is out of range." RESET);
-    }
-    SetParameter(Parameter::kSmartCurrentFreeLimit, PARAM_TYPE_UINT, limit);
+    SetParameter(Parameter::kSmartCurrentFreeLimit, PARAM_TYPE_UINT, "Smart Current Free Limit", limit);
 }
 
 void SparkBase::SetSmartCurrentConfig(uint16_t config)
 {
-    if (config > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Smart current config value is out of range." RESET);
-    }
-    SetParameter(Parameter::kSmartCurrentConfig, PARAM_TYPE_UINT, config);
+    SetParameter(Parameter::kSmartCurrentConfig, PARAM_TYPE_UINT, "Smart Current Config", config);
 }
 
 // PIDF //
 
 void SparkBase::SetP(uint8_t slot, float p)
 {
-    if (!std::isfinite(p))
-    {
-        throw std::invalid_argument(RED "P value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -706,15 +583,11 @@ void SparkBase::SetP(uint8_t slot, float p)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, p);
+    SetParameter(param, PARAM_TYPE_FLOAT, "P", p);
 }
 
 void SparkBase::SetI(uint8_t slot, float i)
 {
-    if (!std::isfinite(i))
-    {
-        throw std::invalid_argument(RED "I value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -734,15 +607,11 @@ void SparkBase::SetI(uint8_t slot, float i)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, i);
+    SetParameter(param, PARAM_TYPE_FLOAT, "I", i);
 }
 
 void SparkBase::SetD(uint8_t slot, float d)
 {
-    if (!std::isfinite(d))
-    {
-        throw std::invalid_argument(RED "D value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -762,15 +631,11 @@ void SparkBase::SetD(uint8_t slot, float d)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, d);
+    SetParameter(param, PARAM_TYPE_FLOAT, "D", d);
 }
 
 void SparkBase::SetF(uint8_t slot, float f)
 {
-    if (!std::isfinite(f))
-    {
-        throw std::invalid_argument(RED "F value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -790,15 +655,11 @@ void SparkBase::SetF(uint8_t slot, float f)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, f);
+    SetParameter(param, PARAM_TYPE_FLOAT, "F", f);
 }
 
 void SparkBase::SetIZone(uint8_t slot, float iZone)
 {
-    if (!std::isfinite(iZone))
-    {
-        throw std::invalid_argument(RED "IZone value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -818,15 +679,11 @@ void SparkBase::SetIZone(uint8_t slot, float iZone)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, iZone);
+    SetParameter(param, PARAM_TYPE_FLOAT, "IZone", iZone);
 }
 
 void SparkBase::SetDFilter(uint8_t slot, float dFilter)
 {
-    if (!std::isfinite(dFilter))
-    {
-        throw std::invalid_argument(RED "DFilter value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -846,15 +703,11 @@ void SparkBase::SetDFilter(uint8_t slot, float dFilter)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, dFilter);
+    SetParameter(param, PARAM_TYPE_FLOAT, "DFilter", dFilter);
 }
 
 void SparkBase::SetOutputMin(uint8_t slot, float min)
 {
-    if (!std::isfinite(min))
-    {
-        throw std::invalid_argument(RED "Output min value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -874,15 +727,11 @@ void SparkBase::SetOutputMin(uint8_t slot, float min)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, min);
+    SetParameter(param, PARAM_TYPE_FLOAT, "Output Min", min);
 }
 
 void SparkBase::SetOutputMax(uint8_t slot, float max)
 {
-    if (!std::isfinite(max))
-    {
-        throw std::invalid_argument(RED "Output max value must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -902,170 +751,114 @@ void SparkBase::SetOutputMax(uint8_t slot, float max)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, max);
+    SetParameter(param, PARAM_TYPE_FLOAT, "Output Max", max);
 }
 
 // Limits //
 
 void SparkBase::SetHardLimitFwdEn(bool enable)
 {
-    SetParameter(Parameter::kHardLimitFwdEn, PARAM_TYPE_BOOL, enable);
+    SetParameter(Parameter::kHardLimitFwdEn, PARAM_TYPE_BOOL, "Hard Limit Forward Enable", enable);
 }
 
 void SparkBase::SetHardLimitRevEn(bool enable)
 {
-    SetParameter(Parameter::kHardLimitRevEn, PARAM_TYPE_BOOL, enable);
+    SetParameter(Parameter::kHardLimitRevEn, PARAM_TYPE_BOOL, "Hard Limit Reverse Enable", enable);
 }
 
 void SparkBase::SetLimitSwitchFwdPolarity(bool polarity)
 {
-    SetParameter(Parameter::kLimitSwitchFwdPolarity, PARAM_TYPE_BOOL, polarity);
+    SetParameter(Parameter::kLimitSwitchFwdPolarity, PARAM_TYPE_BOOL, "Limit Switch Forward Polarity", polarity);
 }
 
 void SparkBase::SetLimitSwitchRevPolarity(bool polarity)
 {
-    SetParameter(Parameter::kLimitSwitchRevPolarity, PARAM_TYPE_BOOL, polarity);
+    SetParameter(Parameter::kLimitSwitchRevPolarity, PARAM_TYPE_BOOL, "Limit Switch Reverse Polarity", polarity);
 }
 
 void SparkBase::SetSoftLimitFwdEn(bool enable)
 {
-    SetParameter(Parameter::kSoftLimitFwdEn, PARAM_TYPE_BOOL, enable);
+    SetParameter(Parameter::kSoftLimitFwdEn, PARAM_TYPE_BOOL, "Soft Limit Forward Enable", enable);
 }
 
 void SparkBase::SetSoftLimitRevEn(bool enable)
 {
-    SetParameter(Parameter::kSoftLimitRevEn, PARAM_TYPE_BOOL, enable);
+    SetParameter(Parameter::kSoftLimitRevEn, PARAM_TYPE_BOOL, "Soft Limit Reverse Enable", enable);
 }
 
 void SparkBase::SetSoftLimitFwd(float limit)
 {
-    if (!std::isfinite(limit))
-    {
-        throw std::invalid_argument(RED "Soft limit forward value must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kSoftLimitFwd, PARAM_TYPE_FLOAT, limit);
+    SetParameter(Parameter::kSoftLimitFwd, PARAM_TYPE_FLOAT, "Soft Limit Forward", limit);
 }
 
 void SparkBase::SetSoftLimitRev(float limit)
 {
-    if (!std::isfinite(limit))
-    {
-        throw std::invalid_argument(RED "Soft limit reverse value must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kSoftLimitRev, PARAM_TYPE_FLOAT, limit);
+    SetParameter(Parameter::kSoftLimitRev, PARAM_TYPE_FLOAT, "Soft Limit Reverse", limit);
 }
 
 // Follower //
 
 void SparkBase::SetFollowerID(uint32_t id)
 {
-    if (id > std::numeric_limits<uint32_t>::max())
-    {
-        throw std::out_of_range(RED "Follower ID value is out of range." RESET);
-    }
-    SetParameter(Parameter::kFollowerID, PARAM_TYPE_UINT, id);
+    SetParameter(Parameter::kFollowerID, PARAM_TYPE_UINT, "Follower ID", id);
 }
 
 void SparkBase::SetFollowerConfig(uint32_t config)
 {
-    if (config > std::numeric_limits<uint32_t>::max())
-    {
-        throw std::out_of_range(RED "Follower config value is out of range." RESET);
-    }
-    SetParameter(Parameter::kFollowerConfig, PARAM_TYPE_UINT, config);
+    SetParameter(Parameter::kFollowerConfig, PARAM_TYPE_UINT, "Follower Config", config);
 }
 
 // Encoder Port //
 
 void SparkBase::SetEncoderCountsPerRev(uint16_t counts)
 {
-    if (counts > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Encoder counts per revolution value is out of range." RESET);
-    }
-    SetParameter(Parameter::kEncoderCountsPerRev, PARAM_TYPE_UINT, counts);
+    SetParameter(Parameter::kEncoderCountsPerRev, PARAM_TYPE_UINT, "Encoder Counts Per Revolution", counts);
 }
 
 void SparkBase::SetEncoderAverageDepth(uint8_t depth)
 {
-    if (depth > 64 || depth == 0)
-    {
-        throw std::out_of_range(
-            RED "Invalid average depth. Must be between 1 or 64." RESET);
-    }
-
-    SetParameter(Parameter::kEncoderAverageDepth, PARAM_TYPE_UINT, depth);
+    SetParameter(Parameter::kEncoderAverageDepth, PARAM_TYPE_UINT, "Encoder Average Depth", depth, 1, 64);
 }
 
 void SparkBase::SetEncoderSampleDelta(uint8_t delta)
 {
-    if (delta == 0)
-    {
-        throw std::out_of_range(
-            RED "Invalid sample delta. Must be between 1 or 255." RESET);
-    }
-
-    SetParameter(Parameter::kEncoderSampleDelta, PARAM_TYPE_UINT, delta);
+    SetParameter(Parameter::kEncoderSampleDelta, PARAM_TYPE_UINT, "Encoder Sample Delta", delta, 1, 255);
 }
 
 void SparkBase::SetEncoderInverted(bool inverted)
 {
-    SetParameter(Parameter::kEncoderInverted, PARAM_TYPE_BOOL, inverted);
+    SetParameter(Parameter::kEncoderInverted, PARAM_TYPE_BOOL, "Encoder Inverted", inverted);
 }
 
 void SparkBase::SetPositionConversionFactor(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Position conversion factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kPositionConversionFactor, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kPositionConversionFactor, PARAM_TYPE_FLOAT, "Position Conversion Factor", factor);
 }
 
 void SparkBase::SetVelocityConversionFactor(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Velocity conversion factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kVelocityConversionFactor, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kVelocityConversionFactor, PARAM_TYPE_FLOAT, "Velocity Conversion Factor", factor);
 }
 
 void SparkBase::SetClosedLoopRampRate(float rampRate)
 {
-    if (!std::isfinite(rampRate))
-    {
-        throw std::invalid_argument(RED "Closed loop ramp rate must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kClosedLoopRampRate, PARAM_TYPE_FLOAT, rampRate);
+    SetParameter(Parameter::kClosedLoopRampRate, PARAM_TYPE_FLOAT, "Closed Loop Ramp Rate", rampRate);
 }
 
 void SparkBase::SetHallSensorSampleRate(float rate)
 {
-    if (!std::isfinite(rate))
-    {
-        throw std::invalid_argument(RED "Hall sensor sample rate must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kHallSensorSampleRate, PARAM_TYPE_FLOAT, rate);
+    SetParameter(Parameter::kHallSensorSampleRate, PARAM_TYPE_FLOAT, "Hall Sensor Sample Rate", rate);
 }
 
 void SparkBase::SetHallSensorAverageDepth(uint16_t depth)
 {
-    if (depth > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Hall sensor average depth value is out of range." RESET);
-    }
-    SetParameter(Parameter::kHallSensorAverageDepth, PARAM_TYPE_UINT, depth);
+    SetParameter(Parameter::kHallSensorAverageDepth, PARAM_TYPE_UINT, "Hall Sensor Average Depth", depth);
 }
 
 // Smart Motion //
 
-void SparkBase::SetSmartMotionMaxVelocity(uint8_t slot, float velocity)
+void SparkBase::SetSmartMotionMaxVelocity(uint8_t slot, float maxVel)
 {
-    if (!std::isfinite(velocity))
-    {
-        throw std::invalid_argument(RED "Smart motion max velocity must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -1085,15 +878,11 @@ void SparkBase::SetSmartMotionMaxVelocity(uint8_t slot, float velocity)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, velocity);
+    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Max Velocity", maxVel);
 }
 
-void SparkBase::SetSmartMotionMaxAccel(uint8_t slot, float accel)
+void SparkBase::SetSmartMotionMaxAccel(uint8_t slot, float maxAccel)
 {
-    if (!std::isfinite(accel))
-    {
-        throw std::invalid_argument(RED "Smart motion max acceleration must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -1113,15 +902,11 @@ void SparkBase::SetSmartMotionMaxAccel(uint8_t slot, float accel)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, accel);
+    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Max Accel", maxAccel);
 }
 
 void SparkBase::SetSmartMotionMinVelOutput(uint8_t slot, float minVel)
 {
-    if (!std::isfinite(minVel))
-    {
-        throw std::invalid_argument(RED "Smart motion min velocity output must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -1141,15 +926,11 @@ void SparkBase::SetSmartMotionMinVelOutput(uint8_t slot, float minVel)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, minVel);
+    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Min Vel Output", minVel);
 }
 
 void SparkBase::SetSmartMotionAllowedClosedLoopError(uint8_t slot, float error)
 {
-    if (!std::isfinite(error))
-    {
-        throw std::invalid_argument(RED "Smart motion allowed closed loop error must be a finite number." RESET);
-    }
     Parameter param;
     switch (slot)
     {
@@ -1169,325 +950,191 @@ void SparkBase::SetSmartMotionAllowedClosedLoopError(uint8_t slot, float error)
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, error);
+    SetParameter(param, PARAM_TYPE_FLOAT, "Smart Motion Allowed Close Loop Error", error);
 }
 
 void SparkBase::SetSmartMotionAccelStrategy(uint8_t slot, float strategy)
 {
-    if (!std::isfinite(strategy))
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSmartMotionAccelStrategy_0,
+        Parameter::kSmartMotionAccelStrategy_1,
+        Parameter::kSmartMotionAccelStrategy_2,
+        Parameter::kSmartMotionAccelStrategy_3};
+
+    if (slot >= params.size())
     {
-        throw std::invalid_argument(RED "Smart motion acceleration strategy must be a finite number." RESET);
-    }
-    Parameter param;
-    switch (slot)
-    {
-    case 0:
-        param = Parameter::kSmartMotionAccelStrategy_0;
-        break;
-    case 1:
-        param = Parameter::kSmartMotionAccelStrategy_1;
-        break;
-    case 2:
-        param = Parameter::kSmartMotionAccelStrategy_2;
-        break;
-    case 3:
-        param = Parameter::kSmartMotionAccelStrategy_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, strategy);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Smart Motion Accel Strategy", strategy);
 }
 
 void SparkBase::SetIMaxAccum(uint8_t slot, float maxAccum)
 {
-    if (!std::isfinite(maxAccum))
+    static const std::array<Parameter, 4> params = {
+        Parameter::kIMaxAccum_0,
+        Parameter::kIMaxAccum_1,
+        Parameter::kIMaxAccum_2,
+        Parameter::kIMaxAccum_3};
+
+    if (slot >= params.size())
     {
-        throw std::invalid_argument(RED "IMaxAccum value must be a finite number." RESET);
-    }
-    Parameter param;
-    switch (slot)
-    {
-    case 0:
-        param = Parameter::kIMaxAccum_0;
-        break;
-    case 1:
-        param = Parameter::kIMaxAccum_1;
-        break;
-    case 2:
-        param = Parameter::kIMaxAccum_2;
-        break;
-    case 3:
-        param = Parameter::kIMaxAccum_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, maxAccum);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "IMaxAccum", maxAccum);
 }
 
 void SparkBase::SetSlot3Placeholder1(uint8_t slot, float value)
 {
-    if (!std::isfinite(value))
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSlot3Placeholder1_0,
+        Parameter::kSlot3Placeholder1_1,
+        Parameter::kSlot3Placeholder1_2,
+        Parameter::kSlot3Placeholder1_3};
+
+    if (slot >= params.size())
     {
-        throw std::invalid_argument(RED "Slot 3 placeholder 1 value must be a finite number." RESET);
-    }
-    Parameter param;
-    switch (slot)
-    {
-    case 0:
-        param = Parameter::kSlot3Placeholder1_0;
-        break;
-    case 1:
-        param = Parameter::kSlot3Placeholder1_1;
-        break;
-    case 2:
-        param = Parameter::kSlot3Placeholder1_2;
-        break;
-    case 3:
-        param = Parameter::kSlot3Placeholder1_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, value);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Slot 3 Placeholder 1", value);
 }
 
 void SparkBase::SetSlot3Placeholder2(uint8_t slot, float value)
 {
-    if (!std::isfinite(value))
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSlot3Placeholder2_0,
+        Parameter::kSlot3Placeholder2_1,
+        Parameter::kSlot3Placeholder2_2,
+        Parameter::kSlot3Placeholder2_3};
+
+    if (slot >= params.size())
     {
-        throw std::invalid_argument(RED "Slot 3 placeholder 2 value must be a finite number." RESET);
-    }
-    Parameter param;
-    switch (slot)
-    {
-    case 0:
-        param = Parameter::kSlot3Placeholder2_0;
-        break;
-    case 1:
-        param = Parameter::kSlot3Placeholder2_1;
-        break;
-    case 2:
-        param = Parameter::kSlot3Placeholder2_2;
-        break;
-    case 3:
-        param = Parameter::kSlot3Placeholder2_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, value);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Slot 3 Placeholder 2", value);
 }
 
 void SparkBase::SetSlot3Placeholder3(uint8_t slot, float value)
 {
-    if (!std::isfinite(value))
+    static const std::array<Parameter, 4> params = {
+        Parameter::kSlot3Placeholder3_0,
+        Parameter::kSlot3Placeholder3_1,
+        Parameter::kSlot3Placeholder3_2,
+        Parameter::kSlot3Placeholder3_3};
+
+    if (slot >= params.size())
     {
-        throw std::invalid_argument(RED "Slot 3 placeholder 3 value must be a finite number." RESET);
-    }
-    Parameter param;
-    switch (slot)
-    {
-    case 0:
-        param = Parameter::kSlot3Placeholder3_0;
-        break;
-    case 1:
-        param = Parameter::kSlot3Placeholder3_1;
-        break;
-    case 2:
-        param = Parameter::kSlot3Placeholder3_2;
-        break;
-    case 3:
-        param = Parameter::kSlot3Placeholder3_3;
-        break;
-    default:
         throw std::out_of_range(RED "Invalid slot number. Max value is 3." RESET);
     }
 
-    SetParameter(param, PARAM_TYPE_FLOAT, value);
+    SetParameter(params[slot], PARAM_TYPE_FLOAT, "Slot 3 Placeholder 3", value);
 }
 
 // Analog Sensor //
 
 void SparkBase::SetAnalogPositionConversion(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Analog position conversion factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kAnalogPositionConversion, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kAnalogPositionConversion, PARAM_TYPE_FLOAT, "Analog Position Conversion", factor);
+    analogPositionConversion = factor;
 }
 
 void SparkBase::SetAnalogVelocityConversion(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Analog velocity conversion factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kAnalogVelocityConversion, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kAnalogVelocityConversion, PARAM_TYPE_FLOAT, "Analog Velocity Conversion", factor);
+    analogVelocityConversion = factor;
 }
 
 void SparkBase::SetAnalogAverageDepth(uint16_t depth)
 {
-    if (depth > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Analog average depth value is out of range." RESET);
-    }
-    SetParameter(Parameter::kAnalogAverageDepth, PARAM_TYPE_UINT, depth);
+    SetParameter(Parameter::kAnalogAverageDepth, PARAM_TYPE_UINT, "Analog Average Depth", depth);
 }
 
 void SparkBase::SetAnalogSensorMode(uint8_t mode)
 {
-    if (mode > 1)
-    {
-        throw std::out_of_range(
-            RED "Invalid analog sensor mode. Must be 0 (Absolute) or 1 (Relative)." RESET);
-    }
-
-    SetParameter(Parameter::kAnalogSensorMode, PARAM_TYPE_UINT, mode);
+    SetParameter(Parameter::kAnalogSensorMode, PARAM_TYPE_UINT, "Analog Sensor Mode", mode, 0, 1,
+                 "Invalid analog sensor mode. Must be 0 (Absolute) or 1 (Relative).");
 }
 
 void SparkBase::SetAnalogInverted(bool inverted)
 {
-    SetParameter(Parameter::kAnalogInverted, PARAM_TYPE_BOOL, inverted);
+    SetParameter(Parameter::kAnalogInverted, PARAM_TYPE_BOOL, "Analog Inverted", inverted);
 }
 
 void SparkBase::SetAnalogSampleDelta(uint16_t delta)
 {
-    if (delta > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Analog sample delta value is out of range." RESET);
-    }
-    SetParameter(Parameter::kAnalogSampleDelta, PARAM_TYPE_UINT, delta);
+    SetParameter(Parameter::kAnalogSampleDelta, PARAM_TYPE_UINT, "Analog Sample Delta", delta);
 }
 
 // Alternate Encoder //
 
 void SparkBase::SetDataPortConfig(uint8_t config)
 {
-    if (config > 1)
-    {
-        throw std::out_of_range(
-            RED "Invalid data port config. Must be 0 (Default) "
-                "or 1 (Alternate Encoder Mode)." RESET);
-    }
-
-    SetParameter(Parameter::kDataPortConfig, PARAM_TYPE_UINT, config);
+    SetParameter(Parameter::kDataPortConfig, PARAM_TYPE_UINT, "Data Port Config", config, 0, 1,
+                 "Invalid data port config. Must be 0 (Default) or 1 (Alternate Encoder Mode).");
 }
 
 void SparkBase::SetAltEncoderCountsPerRev(uint16_t counts)
 {
-    if (counts > std::numeric_limits<uint16_t>::max())
-    {
-        throw std::out_of_range(RED "Alternate encoder counts per revolution value is out of range." RESET);
-    }
-    SetParameter(Parameter::kAltEncoderCountsPerRev, PARAM_TYPE_UINT, counts);
+    SetParameter(Parameter::kAltEncoderCountsPerRev, PARAM_TYPE_UINT, "Alternate Encoder Counts Per Revolution", counts);
 }
 
 void SparkBase::SetAltEncoderAverageDepth(uint8_t depth)
 {
-    if (depth > 64 || depth == 0)
-    {
-        throw std::out_of_range(
-            RED "Invalid average depth. Must be between 1 or 64." RESET);
-    }
-
-    SetParameter(Parameter::kAltEncoderAverageDepth, PARAM_TYPE_UINT, depth);
+    SetParameter(Parameter::kAltEncoderAverageDepth, PARAM_TYPE_UINT, "Alternate Encoder Average Depth", depth, 1, 64);
 }
 
 void SparkBase::SetAltEncoderSampleDelta(uint8_t delta)
 {
-    if (delta == 0)
-    {
-        throw std::out_of_range(
-            RED "Invalid sample delta. Must be between 1 or 255." RESET);
-    }
-
-    SetParameter(Parameter::kAltEncoderSampleDelta, PARAM_TYPE_UINT, delta);
+    SetParameter(Parameter::kAltEncoderSampleDelta, PARAM_TYPE_UINT, "Alternate Encoder Sample Delta", delta, 1, 255);
 }
 
 void SparkBase::SetAltEncoderInverted(bool inverted)
 {
-    SetParameter(Parameter::kAltEncoderInverted, PARAM_TYPE_BOOL, inverted);
+    SetParameter(Parameter::kAltEncoderInverted, PARAM_TYPE_BOOL, "Alternate Encoder Inverted", inverted);
 }
 
 void SparkBase::SetAltEncoderPositionFactor(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Alternate encoder position factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kAltEncoderPositionFactor, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kAltEncoderPositionFactor, PARAM_TYPE_FLOAT, "Alternate Encoder Position Factor", factor);
 }
 
 void SparkBase::SetAltEncoderVelocityFactor(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Alternate encoder velocity factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kAltEncoderVelocityFactor, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kAltEncoderVelocityFactor, PARAM_TYPE_FLOAT, "Alternate Encoder Velocity Factor", factor);
 }
 
 // Duty Cycle Absolute Encoder //
 
 void SparkBase::SetDutyCyclePositionFactor(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Duty cycle position factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kDutyCyclePositionFactor, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kDutyCyclePositionFactor, PARAM_TYPE_FLOAT, "Duty Cycle Position Factor", factor);
 }
 
 void SparkBase::SetDutyCycleVelocityFactor(float factor)
 {
-    if (!std::isfinite(factor))
-    {
-        throw std::invalid_argument(RED "Duty cycle velocity factor must be a finite number." RESET);
-    }
-    SetParameter(Parameter::kDutyCycleVelocityFactor, PARAM_TYPE_FLOAT, factor);
+    SetParameter(Parameter::kDutyCycleVelocityFactor, PARAM_TYPE_FLOAT, "Duty Cycle Velocity Factor", factor);
 }
 
 void SparkBase::SetDutyCycleInverted(bool inverted)
 {
-    SetParameter(Parameter::kDutyCycleInverted, PARAM_TYPE_BOOL, inverted);
+    SetParameter(Parameter::kDutyCycleInverted, PARAM_TYPE_BOOL, "Duty Cycle Inverted", inverted);
 }
 
 void SparkBase::SetDutyCycleAverageDepth(uint8_t depth)
 {
-    if (depth > 7)
-    {
-        throw std::out_of_range(
-            RED "Invalid average depth. Must be 0 (1 bit), 2 "
-                "(2 bits), 3 (4 bits), 4 (8 bits), 5 "
-                "(16 bits), 6 (32 bits), or 7 (64 bits)." RESET);
-    }
-
-    SetParameter(Parameter::kDutyCycleAverageDepth, PARAM_TYPE_UINT, depth);
+    SetParameter(Parameter::kDutyCycleAverageDepth, PARAM_TYPE_UINT, "Duty Cycle Average Depth", depth, 0, 7,
+                 "Invalid average depth. Must be 0 (1 bit), 2 (2 bits), 3 (4 bits), 4 (8 bits), 5 (16 bits), 6 (32 bits), or 7 (64 bits).");
 }
 
 void SparkBase::SetDutyCyclePrescalar(uint8_t prescalar)
 {
-    if (prescalar > 71)
-    {
-        throw std::out_of_range(RED "Invalid prescalar. Max value is 71." RESET);
-    }
-
-    SetParameter(Parameter::kDutyCyclePrescalar, PARAM_TYPE_UINT, prescalar);
+    SetParameter(Parameter::kDutyCyclePrescalar, PARAM_TYPE_UINT, "Duty Cycle Prescalar", prescalar, 0, 71);
 }
 
 void SparkBase::SetDutyCycleZeroOffset(float offset)
 {
-    if (!std::isfinite(offset) || offset > 1.0f || offset < 0.0f)
-    {
-        throw std::out_of_range(RED "Invalid offset. Must be between 0 and 1." RESET);
-    }
-
-    SetParameter(Parameter::kDutyCycleZeroOffset, PARAM_TYPE_FLOAT, offset);
+    SetParameter(Parameter::kDutyCycleZeroOffset, PARAM_TYPE_FLOAT, "Duty Cycle Zero Offset", offset, 0.0f, 1.0f);
 }

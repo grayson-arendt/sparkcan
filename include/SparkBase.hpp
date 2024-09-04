@@ -18,6 +18,7 @@
 #include <system_error>
 #include <thread>
 #include <variant>
+#include <optional>
 
 #include <linux/can.h>
 #include <net/if.h>
@@ -25,30 +26,24 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-/// Coloring error messages
-#define RED "\033[31m"
-#define RESET "\033[0m"
+#define RED "\033[31m"  ///< ANSI escape code for setting terminal text color to red
+#define RESET "\033[0m" ///< ANSI escape code for resetting terminal text color to default
 
-/// Parameter type for unsigned integers
-constexpr uint8_t PARAM_TYPE_UINT = 0x01;
-
-/// Parameter type for floating-point numbers
-constexpr uint8_t PARAM_TYPE_FLOAT = 0x02;
-
-/// Parameter type for boolean values
-constexpr uint8_t PARAM_TYPE_BOOL = 0x03;
+constexpr uint8_t PARAM_TYPE_UINT = 0x01;  ///< Parameter type for unsigned integers
+constexpr uint8_t PARAM_TYPE_FLOAT = 0x02; ///< Parameter type for floating-point numbers
+constexpr uint8_t PARAM_TYPE_BOOL = 0x03;  ///< Parameter type for boolean values
 
 /**
  * @brief System control commands for the SPARK controller
  */
 enum class SystemControl : uint32_t
 {
-    BurnFlash = 0x205FC80,        /**< Burn the current configuration to flash memory */
-    FactoryDefaults = 0x2051D00,  /**< Restore the controller to factory default settings */
-    FactoryReset = 0x2051D40,     /**< Perform a factory reset on the controller */
-    Identify = 0x2051D80,         /**< Trigger the controller to identify itself */
-    ResetFaults = 0x2053000,      /**< Reset all faults on the controller */
-    ClearStickyFaults = 0x2054400 /**< Clear sticky faults on the controller */
+    BurnFlash = 0x205FC80,
+    FactoryDefaults = 0x2051D00,
+    FactoryReset = 0x2051D40,
+    Identify = 0x2051D80,
+    ResetFaults = 0x2053000,
+    ClearStickyFaults = 0x2054400
 };
 
 /**
@@ -56,13 +51,13 @@ enum class SystemControl : uint32_t
  */
 enum class MotorControl : uint32_t
 {
-    AppliedOutput = 0x2050080, /**< Command to set the motor's applied output */
-    Velocity = 0x2050480,      /**< Command to set the motor's velocity */
-    SmartVelocity = 0x20504C0, /**< Command to set the motor's smart velocity */
-    Position = 0x2050C80,      /**< Command to set the motor's position */
-    Voltage = 0x2051080,       /**< Command to set the motor's voltage */
-    Current = 0x20510C0,       /**< Command to set the motor's current */
-    SmartMotion = 0x2051480    /**< Command to set the motor's smart motion */
+    AppliedOutput = 0x2050080,
+    Velocity = 0x2050480,
+    SmartVelocity = 0x20504C0,
+    Position = 0x2050C80,
+    Voltage = 0x2051080,
+    Current = 0x20510C0,
+    SmartMotion = 0x2051480
 };
 
 /**
@@ -70,11 +65,11 @@ enum class MotorControl : uint32_t
  */
 enum class Status : uint32_t
 {
-    Period0 = 0x2051800, /**< Status period 0 */
-    Period1 = 0x2051840, /**< Status period 1 */
-    Period2 = 0x2051880, /**< Status period 2 */
-    Period3 = 0x20518C0, /**< Status period 3 */
-    Period4 = 0x2051900  /**< Status period 4 */
+    Period0 = 0x2051800,
+    Period1 = 0x2051840,
+    Period2 = 0x2051880,
+    Period3 = 0x20518C0,
+    Period4 = 0x2051900
 };
 
 /**
@@ -82,7 +77,6 @@ enum class Status : uint32_t
  */
 enum class Parameter : uint32_t
 {
-    kCanID = 0,
     kInputMode = 1,
     kMotorType = 2,
     kCommAdvance = 3,
@@ -230,36 +224,95 @@ enum class Parameter : uint32_t
 class SparkBase
 {
 private:
-    int soc;
-    uint8_t deviceId;
-    struct sockaddr_can addr;
-    struct ifreq ifr;
-
+    int soc;                  ///< Socket descriptor for CAN communication
+    uint8_t deviceId;         ///< Device ID for the SPARK controller on the CAN bus
+    struct sockaddr_can addr; ///< Socket address for the CAN interface
+    struct ifreq ifr;         ///< Interface request structure for CAN operations
     mutable std::map<Status,
                      std::pair<uint64_t, std::chrono::steady_clock::time_point>>
-        cachedStatus;
+        cachedStatus; ///< Cache for periodic status data
 
+    float analogPositionConversion = 128.0f; ///< Analog position conversion factor, default value is 128.0
+    float analogVelocityConversion = 1.0f;   ///< Analog velocity conversion factor, default value is 1.0
+
+    /**
+     * @brief Sends a CAN frame
+     *
+     * @param arbitrationId The arbitration ID of the CAN frame
+     * @param dlc The data length code (number of bytes in the data array)
+     * @param data The data payload to send in the CAN frame
+     */
     void SendCanFrame(
         uint32_t arbitrationId, uint8_t dlc,
         const std::array<uint8_t, 8> &data = std::array<uint8_t, 8>{}) const;
 
-    void SendControlMessage(std::variant<MotorControl, SystemControl> command,
-                            float value);
+    /**
+     * @brief Sends a control message to the SPARK controller
+     *
+     * @param command The control command to send (either MotorControl or SystemControl)
+     * @param commandName The control command's name
+     * @param value The value associated with the control command
+     * @param minValue The minimum allowed value for the command (optional)
+     * @param maxValue The maximum allowed value for the command (optional)
+     *
+     * @throws std::invalid_argument If the command value is not finite
+     * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype when not provided)
+     */
+    void SendControlMessage(
+        std::variant<MotorControl, SystemControl> command, std::string commandName, float value, std::optional<float> minValue = std::nullopt,
+        std::optional<float> maxValue = std::nullopt) const;
 
+    /**
+     * @brief Reads periodic status data from the SPARK controller
+     *
+     * @param period The status period to read from
+     * @return uint64_t The status data read from the controller
+     */
     uint64_t ReadPeriodicStatus(Status period) const;
 
+    /**
+     * @brief Sets a parameter on the SPARK controller
+     *
+     * @param parameterId The ID of the parameter to set
+     * @param parameterType The type of the parameter (e.g., UINT, FLOAT, BOOL)
+     * @param parameterName The name of the parameter
+     * @param value The value to set the parameter to (can be float, uint32_t, uint16_t, uint8_t, or bool)
+     * @param minValue The minimum allowed value for the parameter (optional)
+     * @param maxValue The maximum allowed value for the parameter (optional)
+     * @param customErrorMessage A custom error message to use if the value is out of range (optional)
+     *
+     * @throws std::invalid_argument If the parameter type is invalid or if a float value is not finite
+     * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype when not provided)
+     */
     void SetParameter(
-        Parameter parameterId, uint8_t parameterType,
-        std::variant<float, uint32_t, uint16_t, uint8_t, bool> value);
+        Parameter parameterId,
+        uint8_t parameterType,
+        std::string parameterName,
+        std::variant<float, uint32_t, uint16_t, uint8_t, bool> value,
+        std::optional<float> minValue = std::nullopt,
+        std::optional<float> maxValue = std::nullopt,
+        std::optional<std::string> customErrorMessage = std::nullopt);
 
 public:
     /**
      * @brief Initializes SparkBase with the specified CAN interface and ID
      *
      * @param interfaceName The name of the CAN interface (e.g., "can0")
-     * @param deviceId The CAN ID of the SPARK controller controller (0-62)
-     * @throws std::invalid_argument if deviceId is greater than 62
-     * @throws std::runtime_error if socket creation, IOCTL, or binding fails
+     * @param deviceId The CAN ID of the SPARK controller (0-62)
+     * @throws std::out_of_range if deviceId is greater than 62
+     * @throws std::system_error if socket creation fails, with detailed error information
+     * @throws std::runtime_error if IOCTL fails or binding to the interface fails, with detailed error information
+     *
+     * @details This constructor attempts to initialize the CAN bus connection. If it fails, it will throw
+     * an exception with a detailed error message that includes possible causes and suggested solutions.
+     * Common issues that may cause exceptions include:
+     * - Invalid device ID
+     * - CAN modules not loaded
+     * - System resource limitations
+     * - CAN interface not existing
+     * - CAN interface not being up
+     * - CAN bus not initialized
+     * - Interface already bound to another program
      */
     SparkBase(const std::string &interfaceName, uint8_t deviceId);
 
@@ -312,42 +365,50 @@ public:
     /**
      * @brief Sets the motor's applied output
      * @param appliedOutput The desired applied output, range: [-1.0, 1.0]
+     * @throws std::invalid_argument if appliedOutput is not finite
+     * @throws std::out_of_range if appliedOutput is outside the range [-1.0, 1.0]
      */
     void SetAppliedOutput(float appliedOutput);
 
     /**
      * @brief Sets the motor's velocity
      * @param velocity The desired velocity
+     * @throws std::invalid_argument if velocity is not a finite number
      */
     void SetVelocity(float velocity);
 
     /**
      * @brief Sets the motor's smart velocity
      * @param smartVelocity The desired smart velocity
+     * @throws std::invalid_argument if smartVelocity is not a finite number
      */
     void SetSmartVelocity(float smartVelocity);
 
     /**
      * @brief Sets the motor's position
      * @param position The desired position
+     * @throws std::invalid_argument if position is not a finite number
      */
     void SetPosition(float position);
 
     /**
      * @brief Sets the motor's voltage
      * @param voltage The desired voltage
+     * @throws std::invalid_argument if voltage is not a finite number
      */
     void SetVoltage(float voltage);
 
     /**
      * @brief Sets the motor's current
      * @param current The desired current
+     * @throws std::invalid_argument if current is not a finite number
      */
     void SetCurrent(float current);
 
     /**
      * @brief Sets the motor's smart motion
      * @param smartMotion The desired smart motion value
+     * @throws std::invalid_argument if smartMotion is not a finite number
      */
     void SetSmartMotion(float smartMotion);
 
@@ -360,8 +421,38 @@ public:
     float GetAppliedOutput() const;
 
     /**
+     * @brief Retrieves the current faults
+     * @return uint16_t A bitfield representing the current faults
+     */
+    uint16_t GetFaults() const;
+
+    /**
+     * @brief Retrieves the sticky faults
+     * @return uint16_t A bitfield representing the sticky faults
+     */
+    uint16_t GetStickyFaults() const;
+
+    /**
+     * @brief Checks if the motor is inverted
+     * @return bool True if the motor is inverted, false otherwise
+     */
+    bool GetInverted() const;
+
+    /**
+     * @brief Gets the current idle mode
+     * @return bool True if in brake mode, false if in coast mode
+     */
+    bool GetIdleMode() const;
+
+    /**
+     * @brief Checks if the SPARK controller is in follower mode
+     * @return bool True if in follower mode, false otherwise
+     */
+    bool IsFollower() const;
+
+    /**
      * @brief Gets the current velocity
-     * @return float The current velocity (RPM)
+     * @return float The current velocity in RPM
      */
     float GetVelocity() const;
 
@@ -385,7 +476,7 @@ public:
 
     /**
      * @brief Gets the current position of the motor
-     * @return float The position (ticks)
+     * @return float The position in ticks
      */
     float GetPosition() const;
 
@@ -397,67 +488,29 @@ public:
 
     /**
      * @brief Gets the current analog velocity
-     * @return float The analog velocity (RPM)
+     * @return float The analog velocity in RPM
      */
     float GetAnalogVelocity() const;
 
     /**
      * @brief Gets the current analog position
-     * @return float The analog position (ticks)
+     * @return float The analog position in ticks
      */
     float GetAnalogPosition() const;
 
     /**
      * @brief Gets the velocity from the alternate encoder
-     * @return float The alternate encoder velocity (RPM)
+     * @return float The alternate encoder velocity in RPM
      */
     float GetAlternateEncoderVelocity() const;
 
     /**
      * @brief Gets the position from the alternate encoder
-     * @return float The alternate encoder position (ticks)
+     * @return float The alternate encoder position in ticks
      */
     float GetAlternateEncoderPosition() const;
 
-    /**
-     * @brief Retrieves the current faults
-     * @return uint16_t A bitfield representing the current faults
-     */
-    uint16_t GetFaults() const;
-
-    /**
-     * @brief Retrieves the sticky faults
-     * @return uint16_t A bitfield representing the sticky faults
-     */
-    uint16_t GetStickyFaults() const;
-
-    /**
-     * @brief Gets the invert, brake, and follower status
-     * @return uint8_t A bitfield representing the invert, brake, and follower status
-     */
-    uint8_t GetInvertBrakeIsFollower() const;
-
-    /**
-     * @brief Checks if the motor is inverted
-     * @return bool True if the motor is inverted, false otherwise
-     */
-    bool GetInverted() const;
-
-    /**
-     * @brief Gets the current idle mode
-     * @return bool True if in brake mode, false if in coast mode
-     */
-    bool GetIdleMode() const;
-
-    /**
-     * @brief Checks if the SPARK controller is in follower mode
-     * @return bool True if in follower mode, false otherwise
-     */
-    bool IsFollower() const;
-
-    // Parameters //
-
-    // Basic //
+    // Parameter Methods //
 
     /**
      * @brief Sets the input mode
@@ -468,26 +521,24 @@ public:
     /**
      * @brief Sets the motor type
      * @param type 0 for Brushed, 1 for Brushless
-     * @throws std::invalid_argument if type is not 0 or 1
      */
     void SetMotorType(uint8_t type);
 
     /**
      * @brief Sets the sensor type
      * @param sensor 0 for No Sensor, 1 for Hall Sensor, 2 for Encoder
-     * @throws std::invalid_argument if sensor is not 0, 1, or 2
      */
     void SetSensorType(uint8_t sensor);
 
     /**
      * @brief Sets the idle mode
      * @param mode 0 for Coast, 1 for Brake
-     * @throws std::invalid_argument if mode is not 0 or 1
      */
     void SetIdleMode(uint8_t mode);
 
     /**
      * @brief Sets the input deadband
+     *
      * @param deadband The deadband value
      */
     void SetInputDeadband(float deadband);
@@ -505,12 +556,6 @@ public:
     void SetRampRate(float rate);
 
     // Advanced //
-
-    /**
-     * @brief Sets the commutation advance
-     * @param advance The commutation advance value
-     */
-    void SetCommAdvance(float advance);
 
     /**
      * @brief Sets the motor Kv (velocity constant)
@@ -535,7 +580,6 @@ public:
     /**
      * @brief Sets the control type
      * @param type 0 for Duty Cycle, 1 for Velocity, 2 for Voltage, 3 for Position
-     * @throws std::invalid_argument if type is not 0, 1, 2, or 3
      */
     void SetCtrlType(uint8_t type);
 
@@ -548,7 +592,7 @@ public:
     /**
      * @brief Sets the closed loop voltage mode
      * @param mode 0 for Disabled, 1 for Control Loop Voltage Output Mode, 2 for Voltage Compensation Mode
-     * @throws std::invalid_argument if mode is not 0, 1, or 2
+
      */
     void SetClosedLoopVoltageMode(uint8_t mode);
 
@@ -573,6 +617,7 @@ public:
     /**
      * @brief Sets the maximum input for position PID
      * @param maxInput The maximum input value
+     * @throws std::invalid_argument if maxInput is not a finite number
      */
     void SetPositionPIDMaxInput(float maxInput);
 
@@ -589,7 +634,6 @@ public:
     /**
      * @brief Sets the current chop limit
      * @param chop The current chop limit (0-125 amps)
-     * @throws std::invalid_argument if chop is greater than 125
      */
     void SetCurrentChop(float chop);
 
@@ -623,7 +667,6 @@ public:
      * @brief Sets the proportional gain for the specified PID slot
      * @param slot The PID slot (0-3)
      * @param p The proportional gain value
-     * @throws std::invalid_argument if slot is greater than 3
      */
     void SetP(uint8_t slot, float p);
 
@@ -631,7 +674,7 @@ public:
      * @brief Sets the integral gain for the specified PID slot
      * @param slot The PID slot (0-3)
      * @param i The integral gain value
-     * @throws std::invalid_argument if slot is greater than 3
+     * @throws std::out_of_range if slot is greater than 3
      */
     void SetI(uint8_t slot, float i);
 
@@ -639,7 +682,7 @@ public:
      * @brief Sets the derivative gain for the specified PID slot
      * @param slot The PID slot (0-3)
      * @param d The derivative gain value
-     * @throws std::invalid_argument if slot is greater than 3
+     * @throws std::out_of_range if slot is greater than 3
      */
     void SetD(uint8_t slot, float d);
 
@@ -647,7 +690,7 @@ public:
      * @brief Sets the feedforward gain for the specified PID slot
      * @param slot The PID slot (0-3)
      * @param f The feedforward gain value
-     * @throws std::invalid_argument if slot is greater than 3
+     * @throws std::out_of_range if slot is greater than 3
      */
     void SetF(uint8_t slot, float f);
 
@@ -758,14 +801,12 @@ public:
     /**
      * @brief Sets the encoder average depth
      * @param depth The average depth (1-64)
-     * @throws std::invalid_argument if depth is 0 or greater than 64
      */
     void SetEncoderAverageDepth(uint8_t depth);
 
     /**
      * @brief Sets the encoder sample delta
      * @param delta The sample delta (1-255)
-     * @throws std::invalid_argument if delta is 0
      */
     void SetEncoderSampleDelta(uint8_t delta);
 
@@ -810,23 +851,23 @@ public:
     /**
      * @brief Sets the maximum velocity for Smart Motion in the specified slot
      * @param slot The Smart Motion slot (0-3)
-     * @param velocity The maximum velocity
+     * @param maxVel The maximum velocity
      * @throws std::invalid_argument if slot is greater than 3
      */
-    void SetSmartMotionMaxVelocity(uint8_t slot, float velocity);
+    void SetSmartMotionMaxVelocity(uint8_t slot, float maxVel);
 
     /**
      * @brief Sets the maximum acceleration for Smart Motion in the specified slot
      * @param slot The Smart Motion slot (0-3)
-     * @param accel The maximum acceleration
+     * @param maxAccel The maximum acceleration
      * @throws std::invalid_argument if slot is greater than 3
      */
-    void SetSmartMotionMaxAccel(uint8_t slot, float accel);
+    void SetSmartMotionMaxAccel(uint8_t slot, float maxAccel);
 
     /**
      * @brief Sets the minimum velocity output for Smart Motion in the specified slot
      * @param slot The Smart Motion slot (0-3)
-     * @param minVel The minimum velocity output
+     * @param minVel The minimum velocity
      * @throws std::invalid_argument if slot is greater than 3
      */
     void SetSmartMotionMinVelOutput(uint8_t slot, float minVel);
@@ -902,7 +943,6 @@ public:
     /**
      * @brief Sets the analog sensor mode
      * @param mode 0 for Absolute, 1 for Relative
-     * @throws std::invalid_argument if mode is not 0 or 1
      */
     void SetAnalogSensorMode(uint8_t mode);
 
@@ -923,7 +963,6 @@ public:
     /**
      * @brief Configures the data port
      * @param config 0 for Default, 1 for Alternate Encoder Mode
-     * @throws std::invalid_argument if config is not 0 or 1
      */
     void SetDataPortConfig(uint8_t config);
 
@@ -936,14 +975,12 @@ public:
     /**
      * @brief Sets the average depth for the alternate encoder
      * @param depth The average depth (1-64)
-     * @throws std::invalid_argument if depth is 0 or greater than 64
      */
     void SetAltEncoderAverageDepth(uint8_t depth);
 
     /**
      * @brief Sets the sample delta for the alternate encoder
      * @param delta The sample delta (1-255)
-     * @throws std::invalid_argument if delta is 0
      */
     void SetAltEncoderSampleDelta(uint8_t delta);
 
@@ -988,21 +1025,18 @@ public:
     /**
      * @brief Sets the average depth for the duty cycle encoder
      * @param depth The average depth (0-7)
-     * @throws std::invalid_argument if depth is greater than 7
      */
     void SetDutyCycleAverageDepth(uint8_t depth);
 
     /**
      * @brief Sets the prescalar for the duty cycle encoder
      * @param prescalar The prescalar value (0-71)
-     * @throws std::invalid_argument if prescalar is greater than 71
      */
     void SetDutyCyclePrescalar(uint8_t prescalar);
 
     /**
      * @brief Sets the zero offset for the duty cycle encoder
      * @param offset The zero offset (0-1)
-     * @throws std::invalid_argument if offset is greater than 1
      */
     void SetDutyCycleZeroOffset(float offset);
 };
