@@ -241,13 +241,8 @@ void SparkBase::Heartbeat()
     frame.can_id = 0x2052C80 | CAN_EFF_FLAG;
     frame.can_dlc = 8;
 
-    std::memset(frame.data, 0, sizeof(frame.data));
-
-    uint32_t byteIndex = deviceId >> 3;
-    uint32_t bitShift = deviceId & 0x07;
-
-    frame.data[byteIndex] = 1 << bitShift;
-
+    std::memset(frame.data, 0xFF, sizeof(frame.data));
+    
     std::array<uint8_t, 8> dataArray;
     std::memcpy(dataArray.data(), frame.data, sizeof(frame.data));
 

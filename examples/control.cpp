@@ -1,8 +1,10 @@
 #include "SparkMax.hpp"
+#include "SparkFlex.hpp"
 #include <iostream>
 
 /*
-This has been tested with the SPARK MAX while connected to an AndyMark 775 RedLine motor.
+This has been tested with the SPARK MAX while connected to an AndyMark 775 RedLine motor and 
+with a Spark Flex connected to a NEO Vortex motor.
 */
 
 int main()
@@ -11,20 +13,33 @@ int main()
     {
         // Initialize SparkMax object with CAN interface and CAN ID
         SparkMax motor("can0", 47);
+        SparkFlex motor2("can0", 15);
 
         motor.SetIdleMode(1);  // Brake
         motor.SetMotorType(0); // Brushed
-        motor.SetInverted(false);
+        motor.SetInverted(true);
         motor.BurnFlash();
+
+        motor2.SetIdleMode(1); // Brake
+        motor2.SetRampRate(0.1);
+        motor2.SetInverted(false);
+        motor2.SetMotorKv(565);
+        motor2.SetEncoderCountsPerRev(7168);
+        motor2.SetSensorType(1);
+        motor2.SetSmartCurrentFreeLimit(20.0);
+        motor2.SetSmartCurrentStallLimit(20.0);
+        motor2.BurnFlash();
 
         // Loop for 5 seconds
         auto start = std::chrono::high_resolution_clock::now();
         while (std::chrono::duration_cast<std::chrono::seconds>(
                    std::chrono::high_resolution_clock::now() - start)
-                   .count() < 5)
+                   .count() < 10)
         {
             motor.Heartbeat();
+            motor2.Heartbeat();
             motor.SetAppliedOutput(0.2);
+            motor2.SetAppliedOutput(0.1);
         }
     }
     catch (const std::exception &e)
