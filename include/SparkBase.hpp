@@ -37,7 +37,6 @@ constexpr uint8_t PARAM_TYPE_BOOL = 0x03;  ///< Parameter type for boolean value
  * @brief System control commands for the SPARK controller
  */
 
-// configuration: 7
 enum class SystemControl : uint32_t
 {
     BurnFlash = 0x205FC80,
@@ -227,7 +226,7 @@ enum class Parameter : uint32_t
 class SparkBase
 {
 private:
-    int soc;                   ///< Socket descriptor for CAN communication
+    static int soc;                   ///< Socket descriptor for CAN communication
     std::string interfaceName; ///< Name of the CAN interface
     uint8_t deviceId;          ///< Device ID for the SPARK controller on the CAN bus
     struct sockaddr_can addr;  ///< Socket address for the CAN interface
@@ -336,9 +335,9 @@ public:
     // SystemControl Methods //
 
     /**
-     * @brief Sends a heartbeat signal to keep the SPARK controller active
+     * @brief Sends a heartbeat signal to keep all SPARK controllers active
      */
-    void Heartbeat();
+    static void Heartbeat();
 
     /**
      * @brief Resets all faults on the SPARK controller

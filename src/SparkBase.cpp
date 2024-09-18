@@ -6,49 +6,50 @@
 
 #include "SparkBase.hpp"
 
+int SparkBase::soc = -1;
+
 SparkBase::SparkBase(const std::string &interfaceName, uint8_t deviceId)
-    : interfaceName(interfaceName), deviceId(deviceId), soc(-1)
+    : interfaceName(interfaceName), deviceId(deviceId)
+
 {
+    // Ensure deviceId is within valid range
     if (deviceId > 62)
     {
         throw std::out_of_range(RED "Invalid CAN bus ID. Must be between 0 and 62." RESET);
     }
 
-    soc = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    if (soc < 0)
+    // Create CAN socket
+    SparkBase::soc = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (SparkBase::soc < 0)
     {
         throw std::system_error(errno, std::generic_category(),
                                 std::string(RED) + "Socket creation failed: " + strerror(errno) +
                                     "\nPossible causes:\n"
-                                    "1. CAN modules not loaded (run 'sudo modprobe can' and 'sudo modprobe can_raw')\n"
+                                    "1. CAN modules not loaded\n"
                                     "2. System resource limitations" +
                                     std::string(RESET));
     }
 
+    // Prepare CAN interface request structure
     std::memset(&ifr, 0, sizeof(ifr));
     std::strncpy(ifr.ifr_name, interfaceName.c_str(), sizeof(ifr.ifr_name) - 1);
+
+    // Get CAN interface index
     if (ioctl(soc, SIOCGIFINDEX, &ifr) < 0)
     {
         close(soc);
-        throw std::runtime_error(std::string(RED) + "IOCTL failed: " + std::string(strerror(errno)) +
-                                 "\nPossible causes:\n"
-                                 "1. CAN interface '" +
-                                 interfaceName + "' does not exist (check cable connection)\n"
-                                                 "2. CAN bus not initialized (run 'sudo ip link set " +
-                                 interfaceName + " type can bitrate 1000000)\n"
-                                                 "3. CAN interface is not up (run 'sudo ip link set " +
-                                 interfaceName + " up')" +
+        throw std::runtime_error(std::string(RED) + "IOCTL failed: " + strerror(errno) +
+                                 "\nPossible causes:\n1. CAN interface does not exist\n2. CAN bus not initialized\n3. CAN interface is not up" +
                                  std::string(RESET));
     }
 
+    // Set up CAN address and bind socket to interface
     addr.can_family = AF_CAN;
     addr.can_ifindex = ifr.ifr_ifindex;
     if (bind(soc, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
         close(soc);
-        throw std::runtime_error(std::string(RED) + "Binding to interface failed: " + std::string(strerror(errno)) +
-                                 "\nPossible cause: Another program is already bound to this interface\n" +
-                                 std::string(RESET));
+        throw std::runtime_error(RED "Binding to interface failed: Another program may be using this interface." RESET);
     }
 }
 
@@ -56,33 +57,31 @@ SparkBase::~SparkBase() { close(soc); }
 
 void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc, const std::array<uint8_t, 8> &data) const
 {
+    // Prepare CAN frame structure
     struct can_frame frame = {};
-    frame.can_id = deviceId | CAN_EFF_FLAG;
-    frame.can_dlc = dlc;
+    frame.can_id = deviceId | CAN_EFF_FLAG; // Use extended frame format
+    frame.can_dlc = dlc;                    // Data length code
     std::memcpy(frame.data, data.data(), dlc);
 
+    // Retry sending frame up to MAX_ATTEMPTS if buffer is full
     constexpr std::chrono::milliseconds WAIT_TIME(1);
     constexpr int MAX_ATTEMPTS = 1000;
-
     for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt)
     {
         ssize_t bytesSent = write(soc, &frame, sizeof(frame));
         if (bytesSent == sizeof(frame))
         {
-            return;
+            return; // Frame successfully sent
         }
         if (bytesSent < 0)
         {
+            // Retry if the buffer is full, otherwise throw error
             if (errno == ENOBUFS || errno == EAGAIN)
             {
                 std::this_thread::sleep_for(WAIT_TIME);
                 continue;
             }
-            throw std::runtime_error(std::string(RED) + "Failed to send CAN frame: " + std::string(strerror(errno)) +
-                                     "\nPossible causes:\n"
-                                     "1. CAN bus not initialized (run 'sudo ip link set " +
-                                     interfaceName + " type can bitrate 1000000')\n" + "2. CAN interface is not up (run 'sudo ip link set " +
-                                     interfaceName + " up')" + std::string(RESET));
+            throw std::runtime_error(RED "Failed to send CAN frame: " + std::string(strerror(errno)) + RESET);
         }
     }
     throw std::runtime_error(RED "Failed to send CAN frame: Buffer consistently full." RESET);
@@ -90,42 +89,48 @@ void SparkBase::SendCanFrame(uint32_t deviceId, uint8_t dlc, const std::array<ui
 
 void SparkBase::SendControlMessage(std::variant<MotorControl, SystemControl> command, std::string commandName, float value, std::optional<float> minValue, std::optional<float> maxValue) const
 {
+    // Validate the value
     if (!std::isfinite(value))
     {
         throw std::invalid_argument(RED + commandName + " must be a finite number." + RESET);
     }
-
     if (minValue && maxValue && (value < *minValue || value > *maxValue))
     {
         throw std::out_of_range(RED + commandName + " must be between " + std::to_string(*minValue) + " and " + std::to_string(*maxValue) + RESET);
     }
 
+    // Build arbitration ID and prepare CAN frame data
     uint32_t arbitrationId = 0;
     uint32_t valueBits;
     std::array<uint8_t, 8> data = {};
 
+    // Set arbitration ID based on command type
     std::visit([&](auto &&cmd)
                {
                    using T = std::decay_t<decltype(cmd)>;
                    if constexpr (std::is_same_v<T, MotorControl> || std::is_same_v<T, SystemControl>)
                    {
-                       arbitrationId = static_cast<uint32_t>(cmd) + deviceId;
+                       arbitrationId = static_cast<uint32_t>(cmd) | deviceId;
                    } },
                command);
 
+    // Copy value into CAN frame data
     std::memcpy(&valueBits, &value, sizeof(valueBits));
     std::memcpy(data.data(), &valueBits, sizeof(valueBits));
 
+    // Send CAN frame with control message
     SendCanFrame(arbitrationId, 8, data);
 }
 
 uint64_t SparkBase::ReadPeriodicStatus(Status period) const
 {
-    constexpr int CACHE_TIMEOUT_MS = 100;
-    constexpr int READ_TIMEOUT_US = 20000;
+    constexpr int CACHE_TIMEOUT_MS = 100;  // Cache timeout in milliseconds
+    constexpr int READ_TIMEOUT_US = 20000; // Timeout for reading CAN frame
 
     auto now = std::chrono::steady_clock::now();
     auto it = cachedStatus.find(period);
+
+    // Return cached status if within timeout period
     if (it != cachedStatus.end())
     {
         auto &[value, timestamp] = it->second;
@@ -135,6 +140,7 @@ uint64_t SparkBase::ReadPeriodicStatus(Status period) const
         }
     }
 
+    // Wait for response and read CAN frame
     struct can_frame response;
     struct timeval tv = {0, READ_TIMEOUT_US};
     fd_set read_fds;
@@ -150,6 +156,7 @@ uint64_t SparkBase::ReadPeriodicStatus(Status period) const
             uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
             uint32_t expectedArbitrationId = static_cast<uint32_t>(period) | deviceId;
 
+            // If the arbitration ID matches, update the cached value
             if (receivedArbitrationId == expectedArbitrationId)
             {
                 uint64_t newValue = 0;
@@ -163,12 +170,13 @@ uint64_t SparkBase::ReadPeriodicStatus(Status period) const
         }
     }
 
+    // Return cached value if no new data received
     if (it != cachedStatus.end())
     {
         return it->second.first;
     }
 
-    return 0;
+    return 0; // Default return if no cached or new value
 }
 
 void SparkBase::SetParameter(
@@ -180,10 +188,11 @@ void SparkBase::SetParameter(
     std::optional<float> maxValue,
     std::optional<std::string> customErrorMessage)
 {
+    // Generate arbitration ID based on parameter ID and deviceId
     uint32_t arbitrationId = 0x205C000 | (static_cast<uint32_t>(parameterId) << 6) | deviceId;
     std::array<uint8_t, 8> data = {};
 
-    // Lambda to throw range errors
+    // Lambda to handle range validation errors
     auto throwRangeError = [&](auto min, auto max)
     {
         if (customErrorMessage)
@@ -192,68 +201,55 @@ void SparkBase::SetParameter(
             throw std::out_of_range(RED + parameterName + " must be between " + std::to_string(min) + " and " + std::to_string(max) + RESET);
     };
 
+    // Process the value based on its type and fill CAN data
     std::visit([&](auto &&v)
                {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, float>)
-        {
-            if (!std::isfinite(v))
-                throw std::invalid_argument(RED + parameterName + " must be a finite number." + RESET);
+                   using T = std::decay_t<decltype(v)>;
+                   if constexpr (std::is_same_v<T, float>)
+                   {
+                       if (!std::isfinite(v)) // Ensure float is valid
+                           throw std::invalid_argument(RED + parameterName + " must be a finite number." + RESET);
+                       if (minValue && maxValue && (v < minValue.value() || v > maxValue.value()))
+                           throwRangeError(minValue.value(), maxValue.value());
+                       std::memcpy(data.data(), &v, sizeof(v)); // Copy float to CAN data
+                   }
+                   else if constexpr (std::is_integral_v<T>)
+                   {
+                       std::memcpy(data.data(), &v, sizeof(v)); // Copy integer to CAN data
+                   }
+                   else if constexpr (std::is_same_v<T, bool>)
+                   {
+                       data[0] = v ? 1 : 0; // Handle boolean type
+                   }
+                   else
+                   {
+                       throw std::invalid_argument(RED "Unsupported value type." RESET);
+                   } },
+               value);
 
-            if (minValue.has_value() && maxValue.has_value())
-            {
-                if (v < minValue.value() || v > maxValue.value())
-                    throwRangeError(minValue.value(), maxValue.value());
-            }
-            else
-            {
-                if (v < std::numeric_limits<float>::lowest() || v > std::numeric_limits<float>::max())
-                    throwRangeError(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max());
-            }
-
-            std::memcpy(data.data(), &v, sizeof(v));
-        }
-        else if constexpr (std::is_same_v<T, uint32_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint8_t>)
-        {
-            if (!minValue.has_value() && !maxValue.has_value())
-            {
-                if (v < std::numeric_limits<T>::min() || v > std::numeric_limits<T>::max())
-                    throwRangeError(std::numeric_limits<T>::min(), std::numeric_limits<T>::max());
-            }
-            std::memcpy(data.data(), &v, sizeof(v));
-        }
-        else if constexpr (std::is_same_v<T, bool>)
-        {
-            data[0] = v ? 1 : 0;
-        }
-        else
-        {
-            throw std::invalid_argument(RED "Unsupported value type." RESET);
-        } }, value);
-
-    data[4] = parameterType;
-    SendCanFrame(arbitrationId, 5, data);
+    data[4] = parameterType;              // Add parameter type to CAN data
+    SendCanFrame(arbitrationId, 5, data); // Send CAN frame with parameter data
 }
 
 std::variant<float, uint32_t, bool> SparkBase::ReadParameter(Parameter parameterId)
 {
-    constexpr int READ_TIMEOUT_US = 20000;
+    constexpr int READ_TIMEOUT_US = 20000; // Timeout for reading CAN frame
 
-    // Prepare to send the request for the parameter value (empty CAN message)
+    // Prepare and send request for parameter value
     struct can_frame request;
-    std::memset(&request, 0, sizeof(request)); // Set all fields to zero
+    std::memset(&request, 0, sizeof(request)); // Zero out request frame
     uint32_t requestArbitrationId = 0x205C000 | (static_cast<uint32_t>(parameterId) << 6) | deviceId;
     request.can_id = requestArbitrationId | CAN_EFF_FLAG; // Use extended frame format
-    request.can_dlc = 0;                                  // Set Data Length Code to 0, representing an empty message
+    request.can_dlc = 0;                                  // Set data length to 0 (empty request)
 
-    // Send the empty CAN frame
+    // Send empty CAN frame
     if (write(soc, &request, sizeof(request)) < 0)
     {
         perror("Error sending CAN message");
-        return uint32_t(0);
+        return uint32_t(0); // Return default on error
     }
 
-    // Now wait for the response from the device
+    // Wait for response
     struct can_frame response;
     struct timeval tv = {0, READ_TIMEOUT_US};
     fd_set read_fds;
@@ -267,17 +263,14 @@ std::variant<float, uint32_t, bool> SparkBase::ReadParameter(Parameter parameter
         if (bytesRead > 0)
         {
             uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
-            uint32_t expectedArbitrationId = requestArbitrationId;
-
-            if (receivedArbitrationId == expectedArbitrationId)
+            if (receivedArbitrationId == requestArbitrationId)
             {
-                // Extract data based on the type in response.data[4]
+                // Parse response data based on type in response.data[4]
                 uint8_t dataType = response.data[4];
                 std::variant<float, uint32_t, bool> newValue;
-
                 switch (dataType)
                 {
-                case 0x01: // uint32_t
+                case 0x01:
                 {
                     uint32_t uintValue = 0;
                     for (int i = 0; i < 4; ++i)
@@ -287,31 +280,28 @@ std::variant<float, uint32_t, bool> SparkBase::ReadParameter(Parameter parameter
                     newValue = uintValue;
                     break;
                 }
-                case 0x02: // float
+                case 0x02:
                 {
                     float floatValue;
                     std::memcpy(&floatValue, response.data, sizeof(float));
                     newValue = floatValue;
                     break;
                 }
-                case 0x03: // bool
+                case 0x03:
                 {
                     bool boolValue = response.data[0] != 0;
                     newValue = boolValue;
                     break;
                 }
                 default:
-                    // Handle unknown types if needed
-                    return uint32_t(0); // Default case for unknown type
+                    return uint32_t(0); // Return default for unknown types
                 }
-
                 return newValue;
             }
         }
     }
 
-    // If no response or failure, return default value (adjust as needed)
-    return uint32_t(0);
+    return uint32_t(0); // Return default if no response
 }
 
 void SparkBase::Heartbeat()
@@ -320,12 +310,33 @@ void SparkBase::Heartbeat()
     frame.can_id = 0x2052C80 | CAN_EFF_FLAG;
     frame.can_dlc = 8;
 
+    // Fill data with 0xFF
     std::memset(frame.data, 0xFF, sizeof(frame.data));
 
-    std::array<uint8_t, 8> dataArray;
-    std::memcpy(dataArray.data(), frame.data, sizeof(frame.data));
+    // Retry sending frame up to MAX_ATTEMPTS if buffer is full
+    constexpr std::chrono::milliseconds WAIT_TIME(1);
+    constexpr int MAX_ATTEMPTS = 1000;
+    for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt)
+    {
+        // Send the frame
+        ssize_t bytesSent = write(SparkBase::soc, &frame, sizeof(frame));
+        if (bytesSent == sizeof(frame))
+        {
+            return; // Frame successfully sent
+        }
 
-    SendCanFrame(frame.can_id, frame.can_dlc, dataArray);
+        if (bytesSent < 0)
+        {
+            // Retry if the buffer is full, otherwise throw error
+            if (errno == ENOBUFS || errno == EAGAIN)
+            {
+                std::this_thread::sleep_for(WAIT_TIME);
+                continue;
+            }
+            throw std::runtime_error(RED "Failed to send CAN frame: " + std::string(strerror(errno)) + RESET);
+        }
+    }
+    throw std::runtime_error(RED "Failed to send CAN frame: Buffer consistently full." RESET);
 }
 
 void SparkBase::BurnFlash()
