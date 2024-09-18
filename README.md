@@ -19,8 +19,8 @@ sudo apt install sparkcan
 git clone https://github.com/grayson-arendt/sparkcan-examples.git
 cd sparkcan-examples/
 
-chmod +x canableStart.sh
-./canableStart.sh
+chmod +x canable_start.sh
+./canable_start.sh
 
 mkdir build
 cd build
