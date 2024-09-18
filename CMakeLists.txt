@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Define library targets as shared
 add_library(sparkcan SHARED
+    src/PIDController.cpp
     src/SparkBase.cpp
     src/SparkMax.cpp 
     src/SparkFlex.cpp
@@ -20,10 +21,12 @@ target_include_directories(sparkcan PUBLIC
 
 # Define the executables
 add_executable(example_control examples/control.cpp)
+add_executable(example_pid examples/pid.cpp)
 add_executable(example_status examples/status.cpp)
 
 # Link the executables with the sparkmax-can library
 target_link_libraries(example_control PRIVATE sparkcan)
+target_link_libraries(example_pid PRIVATE sparkcan)
 target_link_libraries(example_status PRIVATE sparkcan)
 
 # Install the library

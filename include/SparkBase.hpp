@@ -36,6 +36,8 @@ constexpr uint8_t PARAM_TYPE_BOOL = 0x03;  ///< Parameter type for boolean value
 /**
  * @brief System control commands for the SPARK controller
  */
+
+// configuration: 7
 enum class SystemControl : uint32_t
 {
     BurnFlash = 0x205FC80,
@@ -52,7 +54,7 @@ enum class SystemControl : uint32_t
 enum class MotorControl : uint32_t
 {
     Setpoint = 0x2050040,
-    AppliedOutput = 0x2050080,
+    DutyCycle = 0x2050080,
     Velocity = 0x2050480,
     SmartVelocity = 0x20504C0,
     Position = 0x2050C80,
@@ -225,11 +227,11 @@ enum class Parameter : uint32_t
 class SparkBase
 {
 private:
-    int soc;                  ///< Socket descriptor for CAN communication
+    int soc;                   ///< Socket descriptor for CAN communication
     std::string interfaceName; ///< Name of the CAN interface
-    uint8_t deviceId;         ///< Device ID for the SPARK controller on the CAN bus
-    struct sockaddr_can addr; ///< Socket address for the CAN interface
-    struct ifreq ifr;         ///< Interface request structure for CAN operations
+    uint8_t deviceId;          ///< Device ID for the SPARK controller on the CAN bus
+    struct sockaddr_can addr;  ///< Socket address for the CAN interface
+    struct ifreq ifr;          ///< Interface request structure for CAN operations
     mutable std::map<Status,
                      std::pair<uint64_t, std::chrono::steady_clock::time_point>>
         cachedStatus; ///< Cache for periodic status data
@@ -291,6 +293,15 @@ private:
         std::optional<float> minValue = std::nullopt,
         std::optional<float> maxValue = std::nullopt,
         std::optional<std::string> customErrorMessage = std::nullopt);
+
+    /**
+     * @brief Reads the value of a specified parameter from the device via CAN communication.
+     *
+     * @param parameterId The ID of the parameter to read (enumerated by the Parameter type).
+     * @return std::variant<float, uint32_t, bool> The value of the parameter, which can be a float, uint32_t, or bool.
+     * @throws std::runtime_error If the CAN message response is not valid or if the parameter cannot be read.
+     */
+    std::variant<float, uint32_t, bool> ReadParameter(Parameter parameterId);
 
 public:
     /**
@@ -361,7 +372,7 @@ public:
 
     // MotorControl Methods //
 
-     /**
+    /**
      * @brief Sets the value for the currently set control type
      * @param setpoint The desired value
      */
@@ -369,9 +380,9 @@ public:
 
     /**
      * @brief Sets the motor's applied output
-     * @param appliedOutput The desired applied output, range: [-1.0, 1.0]
+     * @param dutyCycle The desired applied output, range: [-1.0, 1.0]
      */
-    void SetAppliedOutput(float appliedOutput);
+    void SetDutyCycle(float dutyCycle);
 
     /**
      * @brief Sets the motor's velocity
@@ -415,7 +426,7 @@ public:
      * @brief Retrieves the current applied output
      * @return float The applied output, range: [-1.0, 1.0]
      */
-    float GetAppliedOutput() const;
+    float GetDutyCycle() const;
 
     /**
      * @brief Retrieves the current faults
@@ -507,7 +518,7 @@ public:
      */
     float GetAlternateEncoderPosition() const;
 
-    // Parameter Methods //
+    // Parameter Setters //
 
     /**
      * @brief Sets the input mode
@@ -708,7 +719,7 @@ public:
     void SetDFilter(uint8_t slot, float dFilter);
 
     /**
-     * @brief Sets the minimum output for the specified PID slot
+     * @brief Sets the output minimum for the specified PID slot
      * @param slot The PID slot (0-3)
      * @param min The minimum output value
      * @throws std::invalid_argument if slot is greater than 3
@@ -716,7 +727,7 @@ public:
     void SetOutputMin(uint8_t slot, float min);
 
     /**
-     * @brief Sets the maximum output for the specified PID slot
+     * @brief Sets the output maximum for the specified PID slot
      * @param slot The PID slot (0-3)
      * @param max The maximum output value
      * @throws std::invalid_argument if slot is greater than 3
@@ -1036,6 +1047,512 @@ public:
      * @param offset The zero offset (0-1)
      */
     void SetDutyCycleZeroOffset(float offset);
+
+    // Parameter Getters //
+
+    // Basic //
+    /**
+     * @brief Get the motor type.
+     * @return Motor type as uint8_t. (0 = Brushed, 1 = Brushless)
+     */
+    uint8_t GetMotorType();
+
+    /**
+     * @brief Get the sensor type.
+     * @return Sensor type as uint8_t. (0 = No Sensor, 1 = Hall Sensor, 2 = Encoder)
+     */
+    uint8_t GetSensorType();
+
+    /**
+     * @brief Get the idle mode.
+     * @return Idle mode as uint8_t. (0 = Coast, 1 = Brake)
+     */
+    uint8_t GetIdleMode();
+
+    /**
+     * @brief Get the input deadband.
+     * @return Input deadband as float.
+     */
+    float GetInputDeadband();
+
+    /**
+     * @brief Get whether the motor is inverted.
+     * @return Inverted state as bool.
+     */
+    bool GetInverted();
+
+    /**
+     * @brief Get the ramp rate.
+     * @return Ramp rate as float.
+     */
+    float GetRampRate();
+
+    // Advanced //
+
+    /**
+     * @brief Get the motor Kv rating.
+     * @return Motor Kv as uint16_t.
+     */
+    uint16_t GetMotorKv();
+
+    /**
+     * @brief Get the motor resistance.
+     * @return Motor resistance as uint16_t.
+     */
+    uint16_t GetMotorR();
+
+    /**
+     * @brief Get the motor inductance.
+     * @return Motor inductance as uint16_t.
+     */
+    uint16_t GetMotorL();
+
+    // Closed Loop //
+
+    /**
+     * @brief Get the control type.
+     * @return Control type as uint8_t. (0 = Duty Cycle, 1 = Velocity, 2 = Voltage, 3 = Position)
+     */
+    uint8_t GetCtrlType();
+
+    /**
+     * @brief Get the feedback sensor PID0 value.
+     * @return Feedback sensor PID0 as uint16_t.
+     */
+    uint16_t GetFeedbackSensorPID0();
+
+    /**
+     * @brief Get the closed loop voltage mode.
+     * @return Closed loop voltage mode as uint8_t.
+     */
+    uint8_t GetClosedLoopVoltageMode();
+
+    /**
+     * @brief Get the compensated nominal voltage.
+     * @return Compensated nominal voltage as float.
+     */
+    float GetCompensatedNominalVoltage();
+
+    /**
+     * @brief Get the position PID wrap enable state.
+     * @return Position PID wrap enable state as bool.
+     */
+    bool GetPositionPIDWrapEnable();
+
+    /**
+     * @brief Get the position PID minimum input.
+     * @return Position PID minimum input as float.
+     */
+    float GetPositionPIDMinInput();
+
+    /**
+     * @brief Get the position PID maximum input.
+     * @return Position PID maximum input as float.
+     */
+    float GetPositionPIDMaxInput();
+
+    // Brushless //
+
+    /**
+     * @brief Get the number of pole pairs.
+     * @return Pole pairs as uint16_t.
+     */
+    uint16_t GetPolePairs();
+
+    // Current Limit //
+
+    /**
+     * @brief Get the current chop value.
+     * @return Current chop as float.
+     */
+    float GetCurrentChop();
+
+    /**
+     * @brief Get the current chop cycles.
+     * @return Current chop cycles as uint16_t.
+     */
+    uint16_t GetCurrentChopCycles();
+
+    /**
+     * @brief Get the smart current stall limit.
+     * @return Smart current stall limit as uint16_t.
+     */
+    uint16_t GetSmartCurrentStallLimit();
+
+    /**
+     * @brief Get the smart current free limit.
+     * @return Smart current free limit as uint16_t.
+     */
+    uint16_t GetSmartCurrentFreeLimit();
+
+    /**
+     * @brief Get the smart current configuration.
+     * @return Smart current config as uint16_t.
+     */
+    uint16_t GetSmartCurrentConfig();
+
+    // PIDF //
+
+    /**
+     * @brief Get the proportional (P) constant for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return Proportional constant as float.
+     */
+    float GetP(uint8_t slot);
+
+    /**
+     * @brief Get the integral (I) constant for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return Integral constant as float.
+     */
+    float GetI(uint8_t slot);
+
+    /**
+     * @brief Get the derivative (D) constant for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return Derivative constant as float.
+     */
+    float GetD(uint8_t slot);
+
+    /**
+     * @brief Get the feedforward (F) constant for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return Feedforward constant as float.
+     */
+    float GetF(uint8_t slot);
+
+    /**
+     * @brief Get the IZone value for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return IZone value as float.
+     */
+    float GetIZone(uint8_t slot);
+
+    /**
+     * @brief Get the DFilter value for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return DFilter value as float.
+     */
+    float GetDFilter(uint8_t slot);
+
+    /**
+     * @brief Get the output minimum value for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return Output minimum value as float.
+     */
+    float GetOutputMin(uint8_t slot);
+
+    /**
+     * @brief Get the output maximum value for a given slot.
+     * @param slot The PID slot (0-3).
+     * @return Output maximum value as float.
+     */
+    float GetOutputMax(uint8_t slot);
+
+    // Limits //
+
+    /**
+     * @brief Get the forward hard limit enable state.
+     * @return Forward hard limit enable state as bool.
+     */
+    bool GetHardLimitFwdEn();
+
+    /**
+     * @brief Get the reverse hard limit enable state.
+     * @return Reverse hard limit enable state as bool.
+     */
+    bool GetHardLimitRevEn();
+
+    /**
+     * @brief Get the forward limit switch polarity.
+     * @return Forward limit switch polarity as bool.
+     */
+    bool GetLimitSwitchFwdPolarity();
+
+    /**
+     * @brief Get the reverse limit switch polarity.
+     * @return Reverse limit switch polarity as bool.
+     */
+    bool GetLimitSwitchRevPolarity();
+
+    /**
+     * @brief Get the forward soft limit enable state.
+     * @return Forward soft limit enable state as bool.
+     */
+    bool GetSoftLimitFwdEn();
+
+    /**
+     * @brief Get the reverse soft limit enable state.
+     * @return Reverse soft limit enable state as bool.
+     */
+    bool GetSoftLimitRevEn();
+
+    /**
+     * @brief Get the forward soft limit value.
+     * @return Forward soft limit as float.
+     */
+    float GetSoftLimitFwd();
+
+    /**
+     * @brief Get the reverse soft limit value.
+     * @return Reverse soft limit as float.
+     */
+    float GetSoftLimitRev();
+
+    // Follower //
+
+    /**
+     * @brief Get the follower ID.
+     * @return Follower ID as uint32_t.
+     */
+    uint32_t GetFollowerID();
+
+    /**
+     * @brief Get the follower configuration.
+     * @return Follower configuration as uint32_t.
+     */
+    uint32_t GetFollowerConfig();
+
+    // Encoder Port //
+
+    /**
+     * @brief Get the encoder counts per revolution.
+     * @return Encoder counts per revolution as uint16_t.
+     */
+    uint16_t GetEncoderCountsPerRev();
+
+    /**
+     * @brief Get the encoder average depth.
+     * @return Encoder average depth as uint8_t.
+     */
+    uint8_t GetEncoderAverageDepth();
+
+    /**
+     * @brief Get the encoder sample delta.
+     * @return Encoder sample delta as uint8_t.
+     */
+    uint8_t GetEncoderSampleDelta();
+
+    /**
+     * @brief Get the encoder inversion state.
+     * @return Encoder inversion state as bool.
+     */
+    bool GetEncoderInverted();
+
+    /**
+     * @brief Get the position conversion factor.
+     * @return Position conversion factor as float.
+     */
+    float GetPositionConversionFactor();
+
+    /**
+     * @brief Get the velocity conversion factor.
+     * @return Velocity conversion factor as float.
+     */
+    float GetVelocityConversionFactor();
+
+    /**
+     * @brief Get the closed loop ramp rate.
+     * @return Closed loop ramp rate as float.
+     */
+    float GetClosedLoopRampRate();
+
+    /**
+     * @brief Get the Hall sensor sample rate.
+     * @return Hall sensor sample rate as float.
+     */
+    float GetHallSensorSampleRate();
+
+    /**
+     * @brief Get the Hall sensor average depth.
+     * @return Hall sensor average depth as uint16_t.
+     */
+    uint16_t GetHallSensorAverageDepth();
+
+    // Smart Motion //
+
+    /**
+     * @brief Get the maximum velocity for Smart Motion in a given slot.
+     * @param slot The Smart Motion slot (0-3).
+     * @return Maximum velocity as float.
+     */
+    float GetSmartMotionMaxVelocity(uint8_t slot);
+
+    /**
+     * @brief Get the maximum acceleration for Smart Motion in a given slot.
+     * @param slot The Smart Motion slot (0-3).
+     * @return Maximum acceleration as float.
+     */
+    float GetSmartMotionMaxAccel(uint8_t slot);
+
+    /**
+     * @brief Get the minimum velocity output for Smart Motion in a given slot.
+     * @param slot The Smart Motion slot (0-3).
+     * @return Minimum velocity output as float.
+     */
+    float GetSmartMotionMinVelOutput(uint8_t slot);
+
+    /**
+     * @brief Get the allowed closed-loop error for Smart Motion in a given slot.
+     * @param slot The Smart Motion slot (0-3).
+     * @return Allowed closed-loop error as float.
+     */
+    float GetSmartMotionAllowedClosedLoopError(uint8_t slot);
+
+    /**
+     * @brief Get the acceleration strategy for Smart Motion in a given slot.
+     * @param slot The Smart Motion slot (0-3).
+     * @return Acceleration strategy as float.
+     */
+    float GetSmartMotionAccelStrategy(uint8_t slot);
+
+    /**
+     * @brief Get the maximum accumulated I term for Smart Motion in a given slot.
+     * @param slot The Smart Motion slot (0-3).
+     * @return Maximum I term accumulation as float.
+     */
+    float GetIMaxAccum(uint8_t slot);
+
+    /**
+     * @brief Get the value for Slot 3 Placeholder 1 in a given slot.
+     * @param slot The slot (0-3).
+     * @return Placeholder value as float.
+     */
+    float GetSlot3Placeholder1(uint8_t slot);
+
+    /**
+     * @brief Get the value for Slot 3 Placeholder 2 in a given slot.
+     * @param slot The slot (0-3).
+     * @return Placeholder value as float.
+     */
+    float GetSlot3Placeholder2(uint8_t slot);
+
+    /**
+     * @brief Get the value for Slot 3 Placeholder 3 in a given slot.
+     * @param slot The slot (0-3).
+     * @return Placeholder value as float.
+     */
+    float GetSlot3Placeholder3(uint8_t slot);
+
+    // Analog Sensor //
+
+    /**
+     * @brief Get the analog position conversion factor.
+     * @return Analog position conversion factor as float.
+     */
+    float GetAnalogPositionConversion();
+
+    /**
+     * @brief Get the analog velocity conversion factor.
+     * @return Analog velocity conversion factor as float.
+     */
+    float GetAnalogVelocityConversion();
+
+    /**
+     * @brief Get the analog average depth.
+     * @return Analog average depth as uint16_t.
+     */
+    uint16_t GetAnalogAverageDepth();
+
+    /**
+     * @brief Get the analog sensor mode.
+     * @return Analog sensor mode as uint8_t.
+     */
+    uint8_t GetAnalogSensorMode();
+
+    /**
+     * @brief Get the analog inversion state.
+     * @return Analog inversion state as bool.
+     */
+    bool GetAnalogInverted();
+
+    /**
+     * @brief Get the analog sample delta.
+     * @return Analog sample delta as uint16_t.
+     */
+    uint16_t GetAnalogSampleDelta();
+
+    // Alternate Encoder //
+
+    /**
+     * @brief Get the data port configuration.
+     * @return Data port config as uint8_t.
+     */
+    uint8_t GetDataPortConfig();
+
+    /**
+     * @brief Get the alternate encoder counts per revolution.
+     * @return Alternate encoder counts per revolution as uint16_t.
+     */
+    uint16_t GetAltEncoderCountsPerRev();
+
+    /**
+     * @brief Get the alternate encoder average depth.
+     * @return Alternate encoder average depth as uint8_t.
+     */
+    uint8_t GetAltEncoderAverageDepth();
+
+    /**
+     * @brief Get the alternate encoder sample delta.
+     * @return Alternate encoder sample delta as uint8_t.
+     */
+    uint8_t GetAltEncoderSampleDelta();
+
+    /**
+     * @brief Get the alternate encoder inversion state.
+     * @return Alternate encoder inversion state as bool.
+     */
+    bool GetAltEncoderInverted();
+
+    /**
+     * @brief Get the alternate encoder position factor.
+     * @return Alternate encoder position factor as float.
+     */
+    float GetAltEncoderPositionFactor();
+
+    /**
+     * @brief Get the alternate encoder velocity factor.
+     * @return Alternate encoder velocity factor as float.
+     */
+    float GetAltEncoderVelocityFactor();
+
+    // Duty Cycle Absolute Encoder //
+
+    /**
+     * @brief Get the duty cycle position factor.
+     * @return Duty cycle position factor as float.
+     */
+    float GetDutyCyclePositionFactor();
+
+    /**
+     * @brief Get the duty cycle velocity factor.
+     * @return Duty cycle velocity factor as float.
+     */
+    float GetDutyCycleVelocityFactor();
+
+    /**
+     * @brief Get the duty cycle inversion state.
+     * @return Duty cycle inversion state as bool.
+     */
+    bool GetDutyCycleInverted();
+
+    /**
+     * @brief Get the duty cycle average depth.
+     * @return Duty cycle average depth as uint8_t.
+     */
+    uint8_t GetDutyCycleAverageDepth();
+
+    /**
+     * @brief Get the duty cycle prescalar.
+     * @return Duty cycle prescalar as uint8_t.
+     */
+    uint8_t GetDutyCyclePrescalar();
+
+    /**
+     * @brief Get the duty cycle zero offset.
+     * @return Duty cycle zero offset as float.
+     */
+    float GetDutyCycleZeroOffset();
 };
 
 #endif // SPARKBASE_HPP

@@ -235,6 +235,85 @@ void SparkBase::SetParameter(
     SendCanFrame(arbitrationId, 5, data);
 }
 
+std::variant<float, uint32_t, bool> SparkBase::ReadParameter(Parameter parameterId)
+{
+    constexpr int READ_TIMEOUT_US = 20000;
+
+    // Prepare to send the request for the parameter value (empty CAN message)
+    struct can_frame request;
+    std::memset(&request, 0, sizeof(request)); // Set all fields to zero
+    uint32_t requestArbitrationId = 0x205C000 | (static_cast<uint32_t>(parameterId) << 6) | deviceId;
+    request.can_id = requestArbitrationId | CAN_EFF_FLAG; // Use extended frame format
+    request.can_dlc = 0;                                  // Set Data Length Code to 0, representing an empty message
+
+    // Send the empty CAN frame
+    if (write(soc, &request, sizeof(request)) < 0)
+    {
+        perror("Error sending CAN message");
+        return uint32_t(0);
+    }
+
+    // Now wait for the response from the device
+    struct can_frame response;
+    struct timeval tv = {0, READ_TIMEOUT_US};
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(soc, &read_fds);
+
+    int ret = select(soc + 1, &read_fds, nullptr, nullptr, &tv);
+    if (ret > 0)
+    {
+        ssize_t bytesRead = read(soc, &response, sizeof(response));
+        if (bytesRead > 0)
+        {
+            uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
+            uint32_t expectedArbitrationId = requestArbitrationId;
+
+            if (receivedArbitrationId == expectedArbitrationId)
+            {
+                // Extract data based on the type in response.data[4]
+                uint8_t dataType = response.data[4];
+                std::variant<float, uint32_t, bool> newValue;
+
+                switch (dataType)
+                {
+                case 0x01: // uint32_t
+                {
+                    uint32_t uintValue = 0;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        uintValue |= static_cast<uint32_t>(response.data[i]) << (8 * i);
+                    }
+                    newValue = uintValue;
+                    break;
+                }
+                case 0x02: // float
+                {
+                    float floatValue;
+                    std::memcpy(&floatValue, response.data, sizeof(float));
+                    newValue = floatValue;
+                    break;
+                }
+                case 0x03: // bool
+                {
+                    bool boolValue = response.data[0] != 0;
+                    newValue = boolValue;
+                    break;
+                }
+                default:
+                    // Handle unknown types if needed
+                    return uint32_t(0); // Default case for unknown type
+                }
+
+                return newValue;
+            }
+        }
+    }
+
+    // If no response or failure, return default value (adjust as needed)
+    return uint32_t(0);
+}
+
 void SparkBase::Heartbeat()
 {
     struct can_frame frame = {};
@@ -242,7 +321,7 @@ void SparkBase::Heartbeat()
     frame.can_dlc = 8;
 
     std::memset(frame.data, 0xFF, sizeof(frame.data));
-    
+
     std::array<uint8_t, 8> dataArray;
     std::memcpy(dataArray.data(), frame.data, sizeof(frame.data));
 
@@ -303,9 +382,9 @@ void SparkBase::SetSetpoint(float setpoint)
     SendControlMessage(MotorControl::Setpoint, "Setpoint", setpoint);
 }
 
-void SparkBase::SetAppliedOutput(float appliedOutput)
+void SparkBase::SetDutyCycle(float dutyCycle)
 {
-    SendControlMessage(MotorControl::AppliedOutput, "Applied Output", appliedOutput, -1.0f, 1.0f);
+    SendControlMessage(MotorControl::DutyCycle, "Duty Cycle", dutyCycle, -1.0f, 1.0f);
 }
 
 void SparkBase::SetVelocity(float velocity)
@@ -341,12 +420,12 @@ void SparkBase::SetSmartMotion(float smartMotion)
 // Status //
 
 // Period 0
-float SparkBase::GetAppliedOutput() const
+float SparkBase::GetDutyCycle() const
 {
     uint64_t status = ReadPeriodicStatus(Status::Period0);
-    int16_t appliedOutput = static_cast<int16_t>(status & 0xFFFF);
+    int16_t DutyCycle = static_cast<int16_t>(status & 0xFFFF);
 
-    return static_cast<float>(appliedOutput) / 32768.0f;
+    return static_cast<float>(DutyCycle) / 32768.0f;
 }
 
 uint16_t SparkBase::GetFaults() const
@@ -385,7 +464,6 @@ float SparkBase::GetVelocity() const
     uint64_t status = ReadPeriodicStatus(Status::Period1);
     return *reinterpret_cast<const float *>(&status);
 }
-
 
 float SparkBase::GetTemperature() const
 {
@@ -433,7 +511,6 @@ float SparkBase::GetAnalogVelocity() const
 
     return static_cast<float>(analogVelocity) / 1.0f;
 }
-
 
 float SparkBase::GetAnalogPosition() const
 {
@@ -1060,4 +1137,886 @@ void SparkBase::SetDutyCyclePrescalar(uint8_t prescalar)
 void SparkBase::SetDutyCycleZeroOffset(float offset)
 {
     SetParameter(Parameter::kDutyCycleZeroOffset, PARAM_TYPE_FLOAT, "Duty Cycle Zero Offset", offset, 0.0f, 1.0f);
+}
+
+// Parameter Getters //
+
+uint8_t SparkBase::GetMotorType()
+{
+    auto result = ReadParameter(Parameter::kMotorType);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for MotorType");
+}
+
+uint8_t SparkBase::GetSensorType()
+{
+    auto result = ReadParameter(Parameter::kSensorType);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for SensorType");
+}
+
+uint8_t SparkBase::GetIdleMode()
+{
+    auto result = ReadParameter(Parameter::kIdleMode);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for IdleMode");
+}
+
+float SparkBase::GetInputDeadband()
+{
+    auto result = ReadParameter(Parameter::kInputDeadband);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for InputDeadband");
+}
+
+bool SparkBase::GetInverted()
+{
+    auto result = ReadParameter(Parameter::kInverted);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for Inverted");
+}
+
+float SparkBase::GetRampRate()
+{
+    auto result = ReadParameter(Parameter::kRampRate);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for RampRate");
+}
+
+// Advanced //
+
+uint16_t SparkBase::GetMotorKv()
+{
+    auto result = ReadParameter(Parameter::kMotorKv);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for MotorKv");
+}
+
+uint16_t SparkBase::GetMotorR()
+{
+    auto result = ReadParameter(Parameter::kMotorR);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for MotorR");
+}
+
+uint16_t SparkBase::GetMotorL()
+{
+    auto result = ReadParameter(Parameter::kMotorL);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for MotorL");
+}
+
+// Closed Loop //
+
+uint8_t SparkBase::GetCtrlType()
+{
+    auto result = ReadParameter(Parameter::kCtrlType);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for CtrlType");
+}
+
+uint16_t SparkBase::GetFeedbackSensorPID0()
+{
+    auto result = ReadParameter(Parameter::kFeedbackSensorPID0);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for FeedbackSensorPID0");
+}
+
+uint8_t SparkBase::GetClosedLoopVoltageMode()
+{
+    auto result = ReadParameter(Parameter::kClosedLoopVoltageMode);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for ClosedLoopVoltageMode");
+}
+
+float SparkBase::GetCompensatedNominalVoltage()
+{
+    auto result = ReadParameter(Parameter::kCompensatedNominalVoltage);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for CompensatedNominalVoltage");
+}
+
+bool SparkBase::GetPositionPIDWrapEnable()
+{
+    auto result = ReadParameter(Parameter::kPositionPIDWrapEnable);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for PositionPIDWrapEnable");
+}
+
+float SparkBase::GetPositionPIDMinInput()
+{
+    auto result = ReadParameter(Parameter::kPositionPIDMinInput);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for PositionPIDMinInput");
+}
+
+float SparkBase::GetPositionPIDMaxInput()
+{
+    auto result = ReadParameter(Parameter::kPositionPIDMaxInput);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for PositionPIDMaxInput");
+}
+
+// Brushless //
+
+uint16_t SparkBase::GetPolePairs()
+{
+    auto result = ReadParameter(Parameter::kPolePairs);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for PolePairs");
+}
+
+// Current Limit //
+
+float SparkBase::GetCurrentChop()
+{
+    auto result = ReadParameter(Parameter::kCurrentChop);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for CurrentChop");
+}
+
+uint16_t SparkBase::GetCurrentChopCycles()
+{
+    auto result = ReadParameter(Parameter::kCurrentChopCycles);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for CurrentChopCycles");
+}
+
+uint16_t SparkBase::GetSmartCurrentStallLimit()
+{
+    auto result = ReadParameter(Parameter::kSmartCurrentStallLimit);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for SmartCurrentStallLimit");
+}
+
+uint16_t SparkBase::GetSmartCurrentFreeLimit()
+{
+    auto result = ReadParameter(Parameter::kSmartCurrentFreeLimit);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for SmartCurrentFreeLimit");
+}
+
+uint16_t SparkBase::GetSmartCurrentConfig()
+{
+    auto result = ReadParameter(Parameter::kSmartCurrentConfig);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for SmartCurrentConfig");
+}
+
+float SparkBase::GetP(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kP_0, Parameter::kP_1, Parameter::kP_2, Parameter::kP_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for P");
+}
+
+float SparkBase::GetI(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kI_0, Parameter::kI_1, Parameter::kI_2, Parameter::kI_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for I");
+}
+
+float SparkBase::GetD(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kD_0, Parameter::kD_1, Parameter::kD_2, Parameter::kD_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for D");
+}
+
+float SparkBase::GetF(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kF_0, Parameter::kF_1, Parameter::kF_2, Parameter::kF_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for F");
+}
+
+float SparkBase::GetIZone(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kIZone_0, Parameter::kIZone_1, Parameter::kIZone_2, Parameter::kIZone_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for IZone");
+}
+
+float SparkBase::GetDFilter(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kDFilter_0, Parameter::kDFilter_1, Parameter::kDFilter_2, Parameter::kDFilter_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for DFilter");
+}
+
+float SparkBase::GetOutputMin(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kOutputMin_0, Parameter::kOutputMin_1, Parameter::kOutputMin_2, Parameter::kOutputMin_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for OutputMin");
+}
+
+float SparkBase::GetOutputMax(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kOutputMax_0, Parameter::kOutputMax_1, Parameter::kOutputMax_2, Parameter::kOutputMax_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for OutputMax");
+}
+
+bool SparkBase::GetHardLimitFwdEn()
+{
+    auto result = ReadParameter(Parameter::kHardLimitFwdEn);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for HardLimitFwdEn");
+}
+
+bool SparkBase::GetHardLimitRevEn()
+{
+    auto result = ReadParameter(Parameter::kHardLimitRevEn);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for HardLimitRevEn");
+}
+
+bool SparkBase::GetLimitSwitchFwdPolarity()
+{
+    auto result = ReadParameter(Parameter::kLimitSwitchFwdPolarity);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for LimitSwitchFwdPolarity");
+}
+
+bool SparkBase::GetLimitSwitchRevPolarity()
+{
+    auto result = ReadParameter(Parameter::kLimitSwitchRevPolarity);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for LimitSwitchRevPolarity");
+}
+
+bool SparkBase::GetSoftLimitFwdEn()
+{
+    auto result = ReadParameter(Parameter::kSoftLimitFwdEn);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SoftLimitFwdEn");
+}
+
+bool SparkBase::GetSoftLimitRevEn()
+{
+    auto result = ReadParameter(Parameter::kSoftLimitRevEn);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SoftLimitRevEn");
+}
+
+float SparkBase::GetSoftLimitFwd()
+{
+    auto result = ReadParameter(Parameter::kSoftLimitFwd);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SoftLimitFwd");
+}
+
+float SparkBase::GetSoftLimitRev()
+{
+    auto result = ReadParameter(Parameter::kSoftLimitRev);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SoftLimitRev");
+}
+
+uint32_t SparkBase::GetFollowerID()
+{
+    auto result = ReadParameter(Parameter::kFollowerID);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return std::get<uint32_t>(result);
+    }
+    throw std::runtime_error("Invalid type returned for FollowerID");
+}
+
+uint32_t SparkBase::GetFollowerConfig()
+{
+    auto result = ReadParameter(Parameter::kFollowerConfig);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return std::get<uint32_t>(result);
+    }
+    throw std::runtime_error("Invalid type returned for FollowerConfig");
+}
+
+float SparkBase::GetClosedLoopRampRate()
+{
+    auto result = ReadParameter(Parameter::kClosedLoopRampRate);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for ClosedLoopRampRate");
+}
+
+uint16_t SparkBase::GetEncoderCountsPerRev()
+{
+    auto result = ReadParameter(Parameter::kEncoderCountsPerRev);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for EncoderCountsPerRev");
+}
+
+uint8_t SparkBase::GetEncoderAverageDepth()
+{
+    auto result = ReadParameter(Parameter::kEncoderAverageDepth);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for EncoderAverageDepth");
+}
+
+uint8_t SparkBase::GetEncoderSampleDelta()
+{
+    auto result = ReadParameter(Parameter::kEncoderSampleDelta);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for EncoderSampleDelta");
+}
+
+bool SparkBase::GetEncoderInverted()
+{
+    auto result = ReadParameter(Parameter::kEncoderInverted);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for EncoderInverted");
+}
+
+float SparkBase::GetPositionConversionFactor()
+{
+    auto result = ReadParameter(Parameter::kPositionConversionFactor);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for PositionConversionFactor");
+}
+
+float SparkBase::GetVelocityConversionFactor()
+{
+    auto result = ReadParameter(Parameter::kVelocityConversionFactor);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for VelocityConversionFactor");
+}
+
+float SparkBase::GetHallSensorSampleRate()
+{
+    auto result = ReadParameter(Parameter::kHallSensorSampleRate);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for HallSensorSampleRate");
+}
+
+uint16_t SparkBase::GetHallSensorAverageDepth()
+{
+    auto result = ReadParameter(Parameter::kHallSensorAverageDepth);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for HallSensorAverageDepth");
+}
+
+float SparkBase::GetSmartMotionMaxVelocity(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSmartMotionMaxVelocity_0, Parameter::kSmartMotionMaxVelocity_1, Parameter::kSmartMotionMaxVelocity_2, Parameter::kSmartMotionMaxVelocity_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SmartMotionMaxVelocity");
+}
+
+float SparkBase::GetSmartMotionMaxAccel(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSmartMotionMaxAccel_0, Parameter::kSmartMotionMaxAccel_1, Parameter::kSmartMotionMaxAccel_2, Parameter::kSmartMotionMaxAccel_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SmartMotionMaxAccel");
+}
+
+float SparkBase::GetSmartMotionMinVelOutput(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSmartMotionMinVelOutput_0, Parameter::kSmartMotionMinVelOutput_1, Parameter::kSmartMotionMinVelOutput_2, Parameter::kSmartMotionMinVelOutput_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SmartMotionMinVelOutput");
+}
+
+float SparkBase::GetSmartMotionAllowedClosedLoopError(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSmartMotionAllowedClosedLoopError_0, Parameter::kSmartMotionAllowedClosedLoopError_1, Parameter::kSmartMotionAllowedClosedLoopError_2, Parameter::kSmartMotionAllowedClosedLoopError_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SmartMotionAllowedClosedLoopError");
+}
+
+float SparkBase::GetSmartMotionAccelStrategy(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSmartMotionAccelStrategy_0, Parameter::kSmartMotionAccelStrategy_1, Parameter::kSmartMotionAccelStrategy_2, Parameter::kSmartMotionAccelStrategy_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for SmartMotionAccelStrategy");
+}
+
+float SparkBase::GetIMaxAccum(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kIMaxAccum_0, Parameter::kIMaxAccum_1, Parameter::kIMaxAccum_2, Parameter::kIMaxAccum_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for IMaxAccum");
+}
+
+float SparkBase::GetSlot3Placeholder1(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSlot3Placeholder1_0, Parameter::kSlot3Placeholder1_1, Parameter::kSlot3Placeholder1_2, Parameter::kSlot3Placeholder1_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for Slot3Placeholder1");
+}
+
+float SparkBase::GetSlot3Placeholder2(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSlot3Placeholder2_0, Parameter::kSlot3Placeholder2_1, Parameter::kSlot3Placeholder2_2, Parameter::kSlot3Placeholder2_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for Slot3Placeholder2");
+}
+
+float SparkBase::GetSlot3Placeholder3(uint8_t slot)
+{
+    static const std::array<Parameter, 4> params = {Parameter::kSlot3Placeholder3_0, Parameter::kSlot3Placeholder3_1, Parameter::kSlot3Placeholder3_2, Parameter::kSlot3Placeholder3_3};
+    if (slot >= params.size())
+    {
+        throw std::out_of_range("Invalid slot number. Max value is 3.");
+    }
+
+    auto result = ReadParameter(params[slot]);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for Slot3Placeholder3");
+}
+
+float SparkBase::GetAnalogPositionConversion()
+{
+    auto result = ReadParameter(Parameter::kAnalogPositionConversion);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for AnalogPositionConversion");
+}
+
+float SparkBase::GetAnalogVelocityConversion()
+{
+    auto result = ReadParameter(Parameter::kAnalogVelocityConversion);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for AnalogVelocityConversion");
+}
+
+uint16_t SparkBase::GetAnalogAverageDepth()
+{
+    auto result = ReadParameter(Parameter::kAnalogAverageDepth);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for AnalogAverageDepth");
+}
+
+uint8_t SparkBase::GetAnalogSensorMode()
+{
+    auto result = ReadParameter(Parameter::kAnalogSensorMode);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for AnalogSensorMode");
+}
+
+bool SparkBase::GetAnalogInverted()
+{
+    auto result = ReadParameter(Parameter::kAnalogInverted);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for AnalogInverted");
+}
+
+uint16_t SparkBase::GetAnalogSampleDelta()
+{
+    auto result = ReadParameter(Parameter::kAnalogSampleDelta);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for AnalogSampleDelta");
+}
+
+uint8_t SparkBase::GetDataPortConfig()
+{
+    auto result = ReadParameter(Parameter::kDataPortConfig);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for DataPortConfig");
+}
+
+uint16_t SparkBase::GetAltEncoderCountsPerRev()
+{
+    auto result = ReadParameter(Parameter::kAltEncoderCountsPerRev);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint16_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for AltEncoderCountsPerRev");
+}
+
+uint8_t SparkBase::GetAltEncoderAverageDepth()
+{
+    auto result = ReadParameter(Parameter::kAltEncoderAverageDepth);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for AltEncoderAverageDepth");
+}
+
+uint8_t SparkBase::GetAltEncoderSampleDelta()
+{
+    auto result = ReadParameter(Parameter::kAltEncoderSampleDelta);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for AltEncoderSampleDelta");
+}
+
+bool SparkBase::GetAltEncoderInverted()
+{
+    auto result = ReadParameter(Parameter::kAltEncoderInverted);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for AltEncoderInverted");
+}
+
+float SparkBase::GetAltEncoderPositionFactor()
+{
+    auto result = ReadParameter(Parameter::kAltEncoderPositionFactor);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for AltEncoderPositionFactor");
+}
+
+float SparkBase::GetAltEncoderVelocityFactor()
+{
+    auto result = ReadParameter(Parameter::kAltEncoderVelocityFactor);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for AltEncoderVelocityFactor");
+}
+
+float SparkBase::GetDutyCyclePositionFactor()
+{
+    auto result = ReadParameter(Parameter::kDutyCyclePositionFactor);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for DutyCyclePositionFactor");
+}
+
+float SparkBase::GetDutyCycleVelocityFactor()
+{
+    auto result = ReadParameter(Parameter::kDutyCycleVelocityFactor);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for DutyCycleVelocityFactor");
+}
+
+bool SparkBase::GetDutyCycleInverted()
+{
+    auto result = ReadParameter(Parameter::kDutyCycleInverted);
+    if (std::holds_alternative<bool>(result))
+    {
+        return std::get<bool>(result);
+    }
+    throw std::runtime_error("Invalid type returned for DutyCycleInverted");
+}
+
+uint8_t SparkBase::GetDutyCycleAverageDepth()
+{
+    auto result = ReadParameter(Parameter::kDutyCycleAverageDepth);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for DutyCycleAverageDepth");
+}
+
+uint8_t SparkBase::GetDutyCyclePrescalar()
+{
+    auto result = ReadParameter(Parameter::kDutyCyclePrescalar);
+    if (std::holds_alternative<uint32_t>(result))
+    {
+        return static_cast<uint8_t>(std::get<uint32_t>(result));
+    }
+    throw std::runtime_error("Invalid type returned for DutyCyclePrescalar");
+}
+
+float SparkBase::GetDutyCycleZeroOffset()
+{
+    auto result = ReadParameter(Parameter::kDutyCycleZeroOffset);
+    if (std::holds_alternative<float>(result))
+    {
+        return std::get<float>(result);
+    }
+    throw std::runtime_error("Invalid type returned for DutyCycleZeroOffset");
 }

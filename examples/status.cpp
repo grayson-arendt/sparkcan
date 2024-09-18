@@ -28,11 +28,11 @@ int main()
                    .count() < 10)
         {
             motor.Heartbeat();
-            motor.SetAppliedOutput(0.2);
+            motor.SetDutyCycle(0.2);
 
             std::cout << std::fixed << std::setprecision(2);
 
-            std::cout << "Applied Output: " << motor.GetAppliedOutput() << "" << std::endl;
+            std::cout << "Duty Cycle: " << motor.GetDutyCycle() << "" << std::endl;
             std::cout << "Velocity: " << motor.GetVelocity() << " RPM" << std::endl;
             std::cout << "Temperature: " << motor.GetTemperature() << " °C" << std::endl;
             std::cout << "Voltage: " << motor.GetVoltage() << " V" << std::endl;
