@@ -1,9 +1,9 @@
-#include "SparkFlex.hpp"
 #include <iomanip>
 #include <iostream>
+#include "SparkFlex.hpp"
 
 /*
-This has been tested with the SPARK Flex while connected to a NEO Vortex.
+This has been tested with the SPARK Flex while connected to a NEO Vortex Brushless Motor.
 */
 
 int main()
@@ -12,6 +12,8 @@ int main()
     {
         // Initialize SparkFlex object with CAN interface and CAN ID
         SparkFlex motor("can0", 15);
+
+        // Configure and flash parameters
         motor.SetIdleMode(IdleMode::kBrake);
         motor.SetSensorType(SensorType::kHallSensor);
         motor.SetRampRate(0.1);
@@ -27,11 +29,12 @@ int main()
         while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start)
                    .count() < 10)
         {
+            // Enable and run motor
             motor.Heartbeat();
             motor.SetDutyCycle(0.2);
 
+            // Display motor status 
             std::cout << std::fixed << std::setprecision(2);
-
             std::cout << "Duty Cycle: " << motor.GetDutyCycle() << "" << std::endl;
             std::cout << "Velocity: " << motor.GetVelocity() << " RPM" << std::endl;
             std::cout << "Temperature: " << motor.GetTemperature() << " °C" << std::endl;

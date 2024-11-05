@@ -1,11 +1,12 @@
-#include "SparkMax.hpp"
-#include "PIDController.hpp"
 #include <iostream>
 #include <iomanip>
 #include <chrono>
+#include "SparkMax.hpp"
+#include "PIDController.hpp"
 
 /*
-This is currently being tested with a SPARK MAX while connected to a Neo 550.
+*This feature is in development*
+This is currently being tested with a SPARK MAX while connected to a NEO 550 Brushless Motor.
 */
 
 int main()
@@ -34,7 +35,7 @@ int main()
         pidController.SetSmartMotionMaxVelocity(slot, 5000.0f);  // Max velocity in RPM
         pidController.SetSmartMotionMaxAccel(slot, 3000.0f);     // Max acceleration in RPM/s
 
-        // Apply PID settings
+        // Burn PID settings
         motor.BurnFlash();
 
         std::cout << "PID Configuration applied successfully." << std::endl;
