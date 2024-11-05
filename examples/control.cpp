@@ -32,7 +32,7 @@ int main()
         motor2.SetSmartCurrentStallLimit(20.0);
         motor2.BurnFlash();
    
-        // Loop for 5 seconds
+        // Loop for 10 seconds
         auto start = std::chrono::high_resolution_clock::now();
         while (std::chrono::duration_cast<std::chrono::seconds>(
                    std::chrono::high_resolution_clock::now() - start)
