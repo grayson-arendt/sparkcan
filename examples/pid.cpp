@@ -14,8 +14,8 @@ int main()
     {
         // Initialize SparkMax object with CAN interface and CAN ID
         SparkMax motor("can0", 47);
-        motor.SetIdleMode(1);  // Brake
-        motor.SetMotorType(1); // Brushless
+        motor.SetIdleMode(IdleMode::kBrake);
+        motor.SetMotorType(MotorType::kBrushless);
         
         // Obtain a PIDController object from the motor
         PIDController pidController(motor);
@@ -39,7 +39,7 @@ int main()
 
         std::cout << "PID Configuration applied successfully." << std::endl;
 
-        // Start velocity control for 10 seconds
+        // Loop for 10 seconds
         auto start = std::chrono::high_resolution_clock::now();
         while (std::chrono::duration_cast<std::chrono::seconds>(
                    std::chrono::high_resolution_clock::now() - start)

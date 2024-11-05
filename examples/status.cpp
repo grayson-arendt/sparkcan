@@ -12,12 +12,12 @@ int main()
     {
         // Initialize SparkFlex object with CAN interface and CAN ID
         SparkFlex motor("can0", 15);
-        motor.SetIdleMode(1); // Brake
+        motor.SetIdleMode(IdleMode::kBrake);
+        motor.SetSensorType(SensorType::kHallSensor);
         motor.SetRampRate(0.1);
         motor.SetInverted(false);
         motor.SetMotorKv(565);
         motor.SetEncoderCountsPerRev(7168);
-        motor.SetSensorType(1);
         motor.SetSmartCurrentFreeLimit(20.0);
         motor.SetSmartCurrentStallLimit(20.0);
         motor.BurnFlash();

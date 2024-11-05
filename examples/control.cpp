@@ -16,23 +16,24 @@ int main()
         SparkFlex motor2("can0", 15);
 
         // Motor 1
-        motor.SetIdleMode(1);  // Brake
-        motor.SetMotorType(0); // Brushed
+        motor.SetIdleMode(IdleMode::kBrake);
+        motor.SetMotorType(MotorType::kBrushed);
         motor.SetInverted(true);
         motor.BurnFlash();
 
         // Motor 2
-        motor2.SetIdleMode(1); // Brake
+        motor2.SetIdleMode(IdleMode::kBrake);
+        motor2.SetMotorType(MotorType::kBrushless);
         motor2.SetRampRate(0.1);
         motor2.SetInverted(false);
         motor2.SetMotorKv(565);
         motor2.SetEncoderCountsPerRev(7168);
-        motor2.SetSensorType(1);
+        motor2.SetSensorType(SensorType::kHallSensor);
         motor2.SetSmartCurrentFreeLimit(20.0);
         motor2.SetSmartCurrentStallLimit(20.0);
         motor2.BurnFlash();
    
-        // Loop for 5 seconds
+        // Loop for 10 seconds
         auto start = std::chrono::high_resolution_clock::now();
         while (std::chrono::duration_cast<std::chrono::seconds>(
                    std::chrono::high_resolution_clock::now() - start)

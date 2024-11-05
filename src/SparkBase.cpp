@@ -546,21 +546,21 @@ float SparkBase::GetAlternateEncoderPosition() const
 
 // Basic //
 
-void SparkBase::SetMotorType(uint8_t type)
+void SparkBase::SetMotorType(MotorType type)
 {
-    SetParameter(Parameter::kMotorType, PARAM_TYPE_UINT, "Motor Type", type, 0, 1,
+    SetParameter(Parameter::kMotorType, PARAM_TYPE_UINT, "Motor Type", static_cast<uint8_t>(type), 0, 1,
                  "Invalid motor type. Must be 0 (Brushed) or 1 (Brushless).");
 }
 
-void SparkBase::SetSensorType(uint8_t type)
+void SparkBase::SetSensorType(SensorType type)
 {
-    SetParameter(Parameter::kSensorType, PARAM_TYPE_UINT, "Sensor Type", type, 0, 2,
+    SetParameter(Parameter::kSensorType, PARAM_TYPE_UINT, "Sensor Type", static_cast<uint8_t>(type), 0, 2,
                  "Invalid sensor type. Must be 0 (No Sensor), 1 (Hall Sensor), or 2 (Encoder).");
 }
 
-void SparkBase::SetIdleMode(uint8_t mode)
+void SparkBase::SetIdleMode(IdleMode mode)
 {
-    SetParameter(Parameter::kIdleMode, PARAM_TYPE_UINT, "Idle Mode", mode, 0, 1,
+    SetParameter(Parameter::kIdleMode, PARAM_TYPE_UINT, "Idle Mode", static_cast<uint8_t>(mode), 0, 1,
                  "Invalid idle mode. Must be 0 (Coast) or 1 (Brake).");
 }
 
@@ -598,9 +598,9 @@ void SparkBase::SetMotorL(uint16_t l)
 
 // Closed Loop //
 
-void SparkBase::SetCtrlType(uint8_t type)
+void SparkBase::SetCtrlType(CtrlType type)
 {
-    SetParameter(Parameter::kCtrlType, PARAM_TYPE_UINT, "Control Type", type, 0, 3,
+    SetParameter(Parameter::kCtrlType, PARAM_TYPE_UINT, "Control Type", static_cast<uint8_t>(type), 0, 3,
                  "Invalid control type. Must be 0 (Duty Cycle), 1 (Velocity), 2 (Voltage), or 3 (Position).");
 }
 

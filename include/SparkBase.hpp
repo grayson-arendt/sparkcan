@@ -213,7 +213,46 @@ enum class Parameter : uint32_t
     kPositionPIDMinInput = 150,
     kPositionPIDMaxInput = 151,
     kDutyCyclePrescalar = 153,
-    kDutyCycleZeroOffset = 154,
+    kDutyCycleZeroOffset = 154
+};
+
+/**
+ * @brief Motor type parameter
+ */
+enum class MotorType : uint8_t
+{
+    kBrushed = 0,
+    kBrushless = 1
+};
+
+/**
+ * @brief Sensor type parameter
+ */
+enum class SensorType : uint8_t
+{
+    kNoSensor = 0,
+    kHallSensor = 1,
+    kEncoder = 2
+};
+
+/**
+ * @brief Control type parameter
+ */
+enum class CtrlType : uint8_t
+{
+    kDutyCycle = 0,
+    kVelocity = 1,
+    kVoltage = 2,
+    kPosition = 3
+};
+
+/**
+ * @brief Idle mode parameter
+ */
+enum class IdleMode : uint8_t
+{
+    kCoast = 0,
+    kBrake = 1
 };
 
 /**
@@ -529,19 +568,19 @@ public:
      * @brief Sets the motor type
      * @param type 0 for Brushed, 1 for Brushless
      */
-    void SetMotorType(uint8_t type);
+    void SetMotorType(MotorType type);
 
     /**
      * @brief Sets the sensor type
      * @param sensor 0 for No Sensor, 1 for Hall Sensor, 2 for Encoder
      */
-    void SetSensorType(uint8_t sensor);
+    void SetSensorType(SensorType sensor);
 
     /**
      * @brief Sets the idle mode
      * @param mode 0 for Coast, 1 for Brake
      */
-    void SetIdleMode(uint8_t mode);
+    void SetIdleMode(IdleMode mode);
 
     /**
      * @brief Sets the input deadband
@@ -588,7 +627,7 @@ public:
      * @brief Sets the control type
      * @param type 0 for Duty Cycle, 1 for Velocity, 2 for Voltage, 3 for Position
      */
-    void SetCtrlType(uint8_t type);
+    void SetCtrlType(CtrlType type);
 
     /**
      * @brief Sets the feedback sensor for PID0
