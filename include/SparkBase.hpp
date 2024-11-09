@@ -566,19 +566,19 @@ public:
 
     /**
      * @brief Sets the motor type
-     * @param type 0 for Brushed, 1 for Brushless
+     * @param type MotorType::kBrushed for Brushed, MotorType::kBrushless for Brushless
      */
     void SetMotorType(MotorType type);
 
     /**
      * @brief Sets the sensor type
-     * @param sensor 0 for No Sensor, 1 for Hall Sensor, 2 for Encoder
+     * @param sensor SensorType::NoSensor for No Sensor, SensorType::HallSensor for Hall Sensor, SensorType::Encoder for Encoder
      */
     void SetSensorType(SensorType sensor);
 
     /**
      * @brief Sets the idle mode
-     * @param mode 0 for Coast, 1 for Brake
+     * @param mode IdleMode::kCoast for Coast, IdleMode::kBrake for Brake
      */
     void SetIdleMode(IdleMode mode);
 
@@ -625,7 +625,7 @@ public:
 
     /**
      * @brief Sets the control type
-     * @param type 0 for Duty Cycle, 1 for Velocity, 2 for Voltage, 3 for Position
+     * @param type CtrlType::DutyCycle for Duty Cycle, CtrlType::Velocity for Velocity, CtrlType::Voltage for Voltage, CtrlType::Position for Position
      */
     void SetCtrlType(CtrlType type);
 
