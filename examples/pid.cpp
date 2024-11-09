@@ -48,7 +48,7 @@ int main()
         {
             // Set velocity setpoint
             float targetVelocity = 3000.0f;  // Target velocity in RPM
-            pidController.SetReference(targetVelocity, 2);
+            pidController.SetReference(targetVelocity, CtrlType::kVelocity);
 
             // Print the current velocity setpoint
             std::cout << "Target Velocity: " << targetVelocity << " RPM" << std::endl;

@@ -14,24 +14,25 @@
 PIDController::PIDController(SparkBase &base)
     : sparkBase(base) {}
 
-void PIDController::SetReference(float setpoint, uint8_t controlType)
+void PIDController::SetReference(float setpoint, CtrlType controlType)
 {
-    switch (controlType)
+    switch (static_cast<uint8_t>(controlType))
     {
     case 0:
         sparkBase.SetDutyCycle(setpoint);
         break;
     case 1:
-        sparkBase.SetPosition(setpoint);
-        break;
-    case 2:
         sparkBase.SetVelocity(setpoint);
         break;
-    case 3:
+    case 2:
         sparkBase.SetVoltage(setpoint);
         break;
+    case 3:
+        sparkBase.SetPosition(setpoint);
+        break;
+
     default:
-        throw std::invalid_argument("Invalid control type. Must be 0 (Duty Cycle), 1 (Position), 2 (Velocity), or 3 (Voltage).");
+        throw std::invalid_argument("Invalid control type. Must be CtrlType::kDutyCycle (Duty Cycle), CtrlType::kVelocity (Velocity), CtrlType::kVoltage (Voltage), CtrlType::kPosition (Position).");
     }
 }
 

@@ -27,7 +27,12 @@ public:
      */
     explicit PIDController(SparkBase &base);
 
-    void SetReference(float setpoint, uint8_t controlType);
+    /**
+     * @brief Set the controller reference value based on the selected control mode.
+     *
+     * @param controlType CtrlType::kDutyCycle for Duty Cycle, CtrlType::kVelocity for Velocity, CtrlType::kVoltage for Voltage, CtrlType::kPosition for Position
+     */
+    void SetReference(float setpoint, CtrlType controlType);
 
     /**
      * @brief Set the feedback device for the PID controller.

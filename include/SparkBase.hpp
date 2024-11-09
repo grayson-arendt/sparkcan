@@ -572,7 +572,7 @@ public:
 
     /**
      * @brief Sets the sensor type
-     * @param sensor SensorType::NoSensor for No Sensor, SensorType::HallSensor for Hall Sensor, SensorType::Encoder for Encoder
+     * @param sensor SensorType::kNoSensor for No Sensor, SensorType::kHallSensor for Hall Sensor, SensorType::kEncoder for Encoder
      */
     void SetSensorType(SensorType sensor);
 
@@ -625,7 +625,7 @@ public:
 
     /**
      * @brief Sets the control type
-     * @param type CtrlType::DutyCycle for Duty Cycle, CtrlType::Velocity for Velocity, CtrlType::Voltage for Voltage, CtrlType::Position for Position
+     * @param type CtrlType::kDutyCycle for Duty Cycle, CtrlType::kVelocity for Velocity, CtrlType::kVoltage for Voltage, CtrlType::kPosition for Position
      */
     void SetCtrlType(CtrlType type);
 
