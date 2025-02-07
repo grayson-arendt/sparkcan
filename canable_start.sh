@@ -28,4 +28,12 @@ else
     exit 1
 fi
 
+# Set txqueuelen
+if sudo ip link set $interface txqueuelen 1000; then
+    echo "Set txqueuelen to 1000."
+else
+    echo "Failed to set txqueuelen."
+    exit 1
+fi
+
 echo "CAN interface $interface setup complete."
