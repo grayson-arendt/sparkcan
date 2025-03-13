@@ -6,8 +6,6 @@
 
 #include "SparkBase.hpp"
 
-int SparkBase::soc_ = -1;
-
 SparkBase::SparkBase(const std::string & interfaceName, uint8_t deviceId)
 : interfaceName_(interfaceName), deviceId_(deviceId)
 {

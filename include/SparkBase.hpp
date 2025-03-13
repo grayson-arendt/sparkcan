@@ -260,7 +260,7 @@ enum class IdleMode : uint8_t
 class SparkBase
 {
 private:
-  static int soc_;                     ///< Socket descriptor for CAN communication
+  inline static int soc_ = -1;  ///< Socket descriptor for CAN communication
   std::string interfaceName_;   ///< Name of the CAN interface
   uint8_t deviceId_;            ///< Device ID for the SPARK controller on the CAN bus
   struct sockaddr_can addr_;    ///< Socket address for the CAN interface
