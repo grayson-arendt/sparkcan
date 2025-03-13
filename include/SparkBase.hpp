@@ -609,13 +609,13 @@ public:
    * @brief Gets the velocity from the alternate encoder
    * @return float The alternate encoder velocity in RPM
    */
-  float GetAlternateEncoderVelocity() const;
+  float GetAltEncoderVelocity() const;
 
   /**
    * @brief Gets the position from the alternate encoder
    * @return float The alternate encoder position in ticks
    */
-  float GetAlternateEncoderPosition() const;
+  float GetAltEncoderPosition() const;
 
   // Parameter Setters //
 
