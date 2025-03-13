@@ -4,7 +4,8 @@ This project is not affiliated with, endorsed by, or in any way connected to REV
 #### Setup
 A USB to CAN adapter such as a [CANable](https://canable.io/) is required. This package has been tested with the [Spark MAX](https://www.revrobotics.com/rev-11-2158/) and [SPARK Flex](https://www.revrobotics.com/rev-11-2159/).
 
-Make sure to use [REV Hardware Client](https://docs.revrobotics.com/rev-hardware-client/gs/install) to set the `device ID` for your controllers and modify the values to match them in the examples.  Ensure the correct motor type is set to either `kBrushed` or `kBrushless` depending on your motor, as it may damage the motor if set to the wrong type.
+Make sure to use [REV Hardware Client](https://docs.revrobotics.com/rev-hardware-client/gs/install) to set the `device ID` for your controllers and modify the values to match them in the examples.  Ensure the correct motor type is set to either `kBrushed` or `kBrushless` depending on your motor, as it may damage the motor if set to the wrong type. This library will only work on **firmware 24.0.X**, it will not work with the new 25.0.X releases, therefore **do not update** in REV Hardware Client.
+
 
 #### Installation
 ```bash
@@ -31,5 +32,5 @@ make
 #### Running an Example
 
 ```bash
-./example_control # OR ./example_status
+./example_control # OR ./example_status OR ./example_pid
 ```
