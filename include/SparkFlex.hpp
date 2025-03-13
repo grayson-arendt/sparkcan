@@ -20,8 +20,8 @@
 class SparkFlex : public SparkBase
 {
 public:
-    explicit SparkFlex(const std::string &interfaceName, uint8_t deviceId);
-    ~SparkFlex() override = default;
+  explicit SparkFlex(const std::string & interfaceName, uint8_t deviceId);
+  ~SparkFlex() override = default;
 };
 
 #endif // SPARKFLEX_HPP

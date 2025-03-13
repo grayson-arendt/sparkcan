@@ -6,5 +6,5 @@
 
 #include "SparkFlex.hpp"
 
-SparkFlex::SparkFlex(const std::string &interfaceName, uint8_t deviceId)
-    : SparkBase(interfaceName, deviceId) {}
+SparkFlex::SparkFlex(const std::string & interfaceName, uint8_t deviceId)
+: SparkBase(interfaceName, deviceId) {}

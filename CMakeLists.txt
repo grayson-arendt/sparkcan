@@ -7,7 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Define library targets as shared
 add_library(sparkcan SHARED
-    src/PIDController.cpp
     src/SparkBase.cpp
     src/SparkMax.cpp 
     src/SparkFlex.cpp
