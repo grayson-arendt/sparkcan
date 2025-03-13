@@ -20,6 +20,7 @@
 #include <optional>
 #include <ostream>
 #include <stdexcept>
+#include <sys/ioctl.h>
 #include <system_error>
 #include <thread>
 #include <unistd.h>
