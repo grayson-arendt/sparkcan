@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "SparkMax.hpp"
 #include "SparkFlex.hpp"
+#include "SparkMax.hpp"
 
 /*
 This has been tested with the SPARK MAX while connected to an AndyMark 775 RedLine Motor and
@@ -15,13 +15,13 @@ int main()
     SparkMax motor("can0", 1);
     SparkFlex motor2("can0", 15);
 
-    // Configure and burn parmaters for Redline
+    // Configure and burn parameters for Redline
     motor.SetIdleMode(IdleMode::kBrake);
     motor.SetMotorType(MotorType::kBrushed);
     motor.SetInverted(true);
     motor.BurnFlash();
 
-    // Configure and burn parmaters for Neo Vortex
+    // Configure and burn parameters for NEO Vortex
     motor2.SetIdleMode(IdleMode::kBrake);
     motor2.SetMotorType(MotorType::kBrushless);
     motor2.SetSensorType(SensorType::kHallSensor);
@@ -36,7 +36,8 @@ int main()
     // Loop for 10 seconds
     auto start = std::chrono::high_resolution_clock::now();
     while (std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::high_resolution_clock::now() - start)
+        std::chrono::high_resolution_clock::now() -
+        start)
       .count() < 10)
     {
       // Enable and run motors

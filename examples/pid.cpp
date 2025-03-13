@@ -11,6 +11,7 @@ This has been tested with the SPARK MAX while connected to a NEO V1.1.
 int main()
 {
   try {
+    // Initialize SparkMax object with CAN interface and CAN ID
     SparkMax motor("can0", 1);
 
     // PID configuration (Tune as needed, values will be very small)
@@ -20,25 +21,26 @@ int main()
     motor.SetF(0, 0.00025);
     motor.BurnFlash();
 
-    float targetVelocityRPM = 200.0f; // Set your desired RPM here
+    float targetVelocity = 200.0; // Set your desired RPM here
 
-    auto startTime = std::chrono::high_resolution_clock::now();
-
+    // Loop for 10 seconds
+    auto start = std::chrono::high_resolution_clock::now();
     while (std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::high_resolution_clock::now() - startTime)
+        std::chrono::high_resolution_clock::now() -
+        start)
       .count() < 10)
     {
-
+      // Enable and set velocity
       motor.Heartbeat();
-      motor.SetVelocity(targetVelocityRPM);
+      motor.SetVelocity(targetVelocity);
 
+      // Display motor status
       std::cout << std::fixed << std::setprecision(2);
-      std::cout << "Target: " << targetVelocityRPM << " RPM | ";
-      std::cout << "Actual: " << motor.GetVelocity() << " RPM | ";
-      std::cout << "Duty: " << motor.GetDutyCycle() * 100.0f << "% | ";
-      std::cout << "Current: " << motor.GetCurrent() << " A\n";
+      std::cout << "\r";
+      std::cout << "Target: " << targetVelocity << " RPM | ";
+      std::cout << "Actual: " << motor.GetVelocity() << " RPM";
+      std::cout.flush();
     }
-
   } catch (const std::exception & e) {
     std::cerr << "Error: " << e.what() << std::endl;
     return -1;
