@@ -58,10 +58,8 @@ SparkBase::SparkBase(const std::string & interfaceName, uint8_t deviceId)
               << static_cast<int>(minor) << "."
               << static_cast<int>(patch) << RESET << std::endl;
   } else {
-    std::cerr <<
-      RED
-      "Failed to read firmware version. \nPlease make sure you are using any version between 1.5.0 and 24.0.1. Will not work on 25.0.0 or higher."
-      RESET << std::endl;
+    throw std::runtime_error(
+            RED "Failed to read firmware version. \nPlease make sure you are using any version between 1.5.0 and 24.0.1. Will not work on 25.0.0 or higher." RESET);
   }
 }
 
