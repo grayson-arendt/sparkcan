@@ -48,6 +48,21 @@ SparkBase::SparkBase(const std::string & interfaceName, uint8_t deviceId)
     throw std::runtime_error(
             RED "Binding to interface failed: Another program may be using this interface." RESET);
   }
+
+  // Get firmware version
+  auto firmwareVersion = ReadFirmwareVersion();
+  if (firmwareVersion) {
+    auto [major, minor, patch, build, isDebug] = *firmwareVersion;
+    std::cout << CYAN "Firmware version: " RESET
+              << GREEN << static_cast<int>(major) << "."
+              << static_cast<int>(minor) << "."
+              << static_cast<int>(patch) << RESET << std::endl;
+  } else {
+    std::cerr <<
+      RED
+      "Failed to read firmware version. \nPlease make sure you are using any version between 1.5.0 and 24.0.1. Will not work on 25.0.0 or higher."
+      RESET << std::endl;
+  }
 }
 
 SparkBase::~SparkBase()
@@ -372,6 +387,45 @@ template<typename T> T SparkBase::GetPIDParam(Parameter baseParam, uint8_t slot,
   return GetParamAs<T>(static_cast<Parameter>(static_cast<int>(baseParam) + slot), name);
 }
 
+std::optional<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, bool>> SparkBase::ReadFirmwareVersion()
+{
+  constexpr int READ_TIMEOUT_US = 20000;
+
+  struct can_frame request = {};
+  uint32_t requestArbitrationId = CreateArbitrationId(APICommand::FirmwareVersion);
+  request.can_id = requestArbitrationId | CAN_EFF_FLAG;
+  request.can_dlc = 0;
+
+  if (write(soc_, &request, sizeof(request)) < 0) {
+    perror("Error sending firmware version request");
+    return std::nullopt;
+  }
+
+  struct can_frame response = {};
+  struct timeval tv = {0, READ_TIMEOUT_US};
+  fd_set read_fds;
+  FD_ZERO(&read_fds);
+  FD_SET(soc_, &read_fds);
+
+  int ret = select(soc_ + 1, &read_fds, nullptr, nullptr, &tv);
+  if (ret > 0) {
+    ssize_t bytesRead = read(soc_, &response, sizeof(response));
+    if (bytesRead >= 5) {
+      uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
+      if (receivedArbitrationId == requestArbitrationId) {
+        uint8_t major = response.data[0];
+        uint8_t minor = response.data[1];
+        uint8_t patch = response.data[2];
+        uint8_t build = response.data[3];
+        bool isDebug = response.data[4] != 0;
+        return std::make_tuple(major, minor, patch, build, isDebug);
+      }
+    }
+  }
+
+  return std::nullopt;
+}
+
 void SparkBase::Heartbeat()
 {
   std::vector<uint8_t> data(8, 0xFF);
@@ -547,15 +601,22 @@ float SparkBase::GetIAccum() const
 float SparkBase::GetAnalogVoltage() const
 {
   uint64_t status = ReadPeriodicStatus(APICommand::Period3);
-  uint16_t voltageRaw = status & 0x3FF;
-  return static_cast<float>(voltageRaw) / 1024.0f;
+  uint8_t * s = reinterpret_cast<uint8_t *>(&status);
+
+  uint16_t voltageRaw = s[0] | ((s[1] & 0x03) << 8);
+  return static_cast<float>(voltageRaw) / 256.0f;
 }
 
 float SparkBase::GetAnalogVelocity() const
 {
   uint64_t status = ReadPeriodicStatus(APICommand::Period3);
-  uint32_t velRaw = (status >> 10) & 0x1FFFFF;
-  return static_cast<float>(velRaw);
+  uint8_t * s = reinterpret_cast<uint8_t *>(&status);
+
+  uint32_t velRaw = ((s[1] >> 2) & 0x3F) |
+    (static_cast<uint32_t>(s[2]) << 6) |
+    (static_cast<uint32_t>(s[3]) << 14);
+
+  return static_cast<float>(velRaw) / 32768.0f;
 }
 
 float SparkBase::GetAnalogPosition() const
