@@ -48,11 +48,17 @@ SparkBase::SparkBase(const std::string & interfaceName, uint8_t deviceId)
     throw std::runtime_error(
             RED "Binding to interface failed: Another program may be using this interface." RESET);
   }
+
+  thread_ = std::thread(&SparkBase::ReadPeriodicMessages, this);
 }
 
 SparkBase::~SparkBase()
 {
+  run_ = false;
   close(soc_);
+  if (thread_.joinable()) {
+    thread_.join();
+  }
 }
 
 void SparkBase::SendCanFrame(APICommand cmd, const std::vector<uint8_t> & data) const
@@ -62,7 +68,7 @@ void SparkBase::SendCanFrame(APICommand cmd, const std::vector<uint8_t> & data) 
   }
 
   struct can_frame frame = {};
-  frame.can_id = CreateArbitrationId(cmd) | CAN_EFF_FLAG;
+  frame.can_id = CreateArbId(cmd) | CAN_EFF_FLAG;
   frame.can_dlc = static_cast<uint8_t>(data.size());
   std::memcpy(frame.data, data.data(), data.size());
 
@@ -88,14 +94,14 @@ void SparkBase::SendCanFrame(APICommand cmd, const std::vector<uint8_t> & data) 
   throw std::runtime_error(RED "Failed to send CAN frame: Buffer consistently full." RESET);
 }
 
-void SparkBase::SendCanFrame(uint32_t arbitrationId, const std::vector<uint8_t> & data) const
+void SparkBase::SendCanFrame(uint32_t arbId, const std::vector<uint8_t> & data) const
 {
   if (data.size() > 8) {
     throw std::runtime_error("CAN frame too large");
   }
 
   struct can_frame frame = {};
-  frame.can_id = arbitrationId | CAN_EFF_FLAG;
+  frame.can_id = arbId | CAN_EFF_FLAG;
   frame.can_dlc = static_cast<uint8_t>(data.size());
   std::memcpy(frame.data, data.data(), data.size());
 
@@ -127,7 +133,7 @@ uint8_t SparkBase::GetAPIIndex(APICommand cmd) const
   return static_cast<uint8_t>(static_cast<uint16_t>(cmd) & 0x0F);
 }
 
-uint32_t SparkBase::CreateArbitrationId(APICommand cmd) const
+uint32_t SparkBase::CreateArbId(APICommand cmd) const
 {
   uint8_t apiClass = GetAPIClass(cmd);
   uint8_t apiIndex = GetAPIIndex(cmd);
@@ -137,7 +143,7 @@ uint32_t SparkBase::CreateArbitrationId(APICommand cmd) const
          static_cast<uint32_t>(deviceId_);
 }
 
-uint32_t SparkBase::CreateParameterArbitrationId(Parameter paramId) const
+uint32_t SparkBase::CreateParamArbId(Parameter paramId) const
 {
   return (static_cast<uint32_t>(DEVICE_TYPE) << 24) | (static_cast<uint32_t>(MANUFACTURER) << 16) |
          (static_cast<uint32_t>(48) <<
@@ -162,58 +168,6 @@ void SparkBase::SendControlMessage(
   SendCanFrame(cmd, data);
 }
 
-uint64_t SparkBase::ReadPeriodicStatus(APICommand cmd) const
-{
-  constexpr int CACHE_TIMEOUT_MS = 100;    // Cache timeout in milliseconds
-  constexpr int READ_TIMEOUT_US = 20000;   // Timeout for reading CAN frame
-
-  auto now = std::chrono::steady_clock::now();
-  auto it = cachedStatus_.find(cmd);
-
-  // Return cached status if within timeout period
-  if (it != cachedStatus_.end()) {
-    auto &[value, timestamp] = it->second;
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - timestamp).count() <
-      CACHE_TIMEOUT_MS)
-    {
-      return value;
-    }
-  }
-
-  // Wait for response and read CAN frame
-  struct can_frame response;
-  struct timeval tv = {0, READ_TIMEOUT_US};
-  fd_set read_fds;
-  FD_ZERO(&read_fds);
-  FD_SET(soc_, &read_fds);
-
-  int ret = select(soc_ + 1, &read_fds, nullptr, nullptr, &tv);
-  if (ret > 0) {
-    ssize_t bytesRead = read(soc_, &response, sizeof(response));
-    if (bytesRead > 0) {
-      uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
-      uint32_t expectedArbitrationId = CreateArbitrationId(cmd);
-
-      // If the arbitration ID matches, update the cached value
-      if (receivedArbitrationId == expectedArbitrationId) {
-        uint64_t newValue = 0;
-        for (int i = 0; i < response.can_dlc; i++) {
-          newValue |= static_cast<uint64_t>(response.data[i]) << (8 * i);
-        }
-        cachedStatus_[cmd] = {newValue, now};
-        return newValue;
-      }
-    }
-  }
-
-  // Return cached value if no new data received
-  if (it != cachedStatus_.end()) {
-    return it->second.first;
-  }
-
-  return 0;   // Default return if no cached or new value
-}
-
 void SparkBase::SetParameter(
   Parameter parameterId, uint8_t parameterType, std::string parameterName,
   std::variant<float, uint32_t, uint16_t, uint8_t, bool> value,
@@ -233,7 +187,7 @@ void SparkBase::SetParameter(
 
   // Create CAN data and arbitration ID
   std::vector<uint8_t> data(5, 0);
-  uint32_t arbitrationId = CreateParameterArbitrationId(parameterId);
+  uint32_t arbId = CreateParamArbId(parameterId);
 
   // Process the value based on its type and fill CAN data
   std::visit(
@@ -257,17 +211,15 @@ void SparkBase::SetParameter(
     },
     value);
 
-  data[4] = parameterType;             // Add parameter type to CAN data
-  SendCanFrame(arbitrationId, data);   // Send CAN frame with parameter data
+  data[4] = parameterType;     // Add parameter type to CAN data
+  SendCanFrame(arbId, data);   // Send CAN frame with parameter data
 }
 
 std::optional<std::variant<float, uint32_t, bool>> SparkBase::ReadParameter(Parameter parameterId)
 {
-  constexpr int READ_TIMEOUT_US = 20000;
-
   struct can_frame request = {};
-  uint32_t requestArbitrationId = CreateParameterArbitrationId(parameterId);
-  request.can_id = requestArbitrationId | CAN_EFF_FLAG;
+  uint32_t requestarbId = CreateParamArbId(parameterId);
+  request.can_id = requestarbId | CAN_EFF_FLAG;
   request.can_dlc = 0;
 
   if (write(soc_, &request, sizeof(request)) < 0) {
@@ -285,8 +237,8 @@ std::optional<std::variant<float, uint32_t, bool>> SparkBase::ReadParameter(Para
   if (ret > 0) {
     ssize_t bytesRead = read(soc_, &response, sizeof(response));
     if (bytesRead > 0) {
-      uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
-      if (receivedArbitrationId == requestArbitrationId) {
+      uint32_t receivedarbId = response.can_id & CAN_EFF_MASK;
+      if (receivedarbId == requestarbId) {
         uint8_t type = response.data[4];
         switch (type) {
           case 0x01: {
@@ -374,11 +326,9 @@ template<typename T> T SparkBase::GetPIDParam(Parameter baseParam, uint8_t slot,
 
 std::optional<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, bool>> SparkBase::ReadFirmwareVersion()
 {
-  constexpr int READ_TIMEOUT_US = 20000;
-
   struct can_frame request = {};
-  uint32_t requestArbitrationId = CreateArbitrationId(APICommand::FirmwareVersion);
-  request.can_id = requestArbitrationId | CAN_EFF_FLAG;
+  uint32_t requestarbId = CreateArbId(APICommand::FirmwareVersion);
+  request.can_id = requestarbId | CAN_EFF_FLAG;
   request.can_dlc = 0;
 
   if (write(soc_, &request, sizeof(request)) < 0) {
@@ -396,8 +346,8 @@ std::optional<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, bool>> SparkBase::R
   if (ret > 0) {
     ssize_t bytesRead = read(soc_, &response, sizeof(response));
     if (bytesRead >= 5) {
-      uint32_t receivedArbitrationId = response.can_id & CAN_EFF_MASK;
-      if (receivedArbitrationId == requestArbitrationId) {
+      uint32_t receivedarbId = response.can_id & CAN_EFF_MASK;
+      if (receivedarbId == requestarbId) {
         uint8_t major = response.data[0];
         uint8_t minor = response.data[1];
         uint8_t patch = response.data[2];
@@ -409,6 +359,83 @@ std::optional<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, bool>> SparkBase::R
   }
 
   return std::nullopt;
+}
+
+void SparkBase::ReadPeriodicMessages()
+{
+  // Set socket to non-blocking
+  int flags = fcntl(soc_, F_GETFL, 0);
+  fcntl(soc_, F_SETFL, flags | O_NONBLOCK);
+
+  struct can_frame response = {};
+
+  while (run_) {
+    struct timeval tv = {0, READ_TIMEOUT_US};
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(soc_, &read_fds);
+
+    int ret = select(soc_ + 1, &read_fds, nullptr, nullptr, &tv);
+    if (ret > 0) {
+      ssize_t bytesRead = read(soc_, &response, sizeof(response));
+      if (bytesRead <= 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+          // Try again
+          break;
+        }
+        continue;
+      }
+
+      // Process the frame
+      uint32_t receivedArbId = response.can_id & CAN_EFF_MASK;
+      uint64_t rawValue = 0;
+      for (int i = 0; i < response.can_dlc; ++i) {
+        rawValue |= uint64_t(response.data[i]) << (8 * i);
+      }
+      auto now = std::chrono::steady_clock::now();
+
+      std::lock_guard<std::mutex> lock(mutex_);
+
+      if (receivedArbId == CreateArbId(APICommand::Period0)) {
+        period0_.dutyCycle = int16_t(rawValue & 0xFFFF) / 32768.0f;
+        period0_.faults = (rawValue >> 16) & 0xFFFF;
+        period0_.stickyFaults = (rawValue >> 32) & 0xFFFF;
+        period0_.isInverted = (rawValue >> 49) & 1;
+        period0_.idleMode = (rawValue >> 57) & 1;
+        period0_.isFollower = (rawValue >> 58) & 1;
+        period0_.timestamp = now;
+
+      } else if (receivedArbId == CreateArbId(APICommand::Period1)) {
+        uint32_t velocity = rawValue & 0xFFFFFFFF;
+        std::memcpy(&period1_.velocity, &velocity, 4);
+        period1_.temperature = (rawValue >> 32) & 0xFF;
+        period1_.voltage = ((rawValue >> 40) & 0xFFFF) / 128.0f;
+        period1_.current = ((rawValue >> 48) & 0xFFF) / 32.0f;
+        period1_.timestamp = now;
+      } else if (receivedArbId == CreateArbId(APICommand::Period2)) {
+        uint32_t position = rawValue & 0xFFFFFFFF;
+        std::memcpy(&period2_.position, &position, 4);
+        period2_.iAccum = float((rawValue >> 32) & 0xFFFFFFFF) / 1000.0f;
+        period2_.timestamp = now;
+      } else if (receivedArbId == CreateArbId(APICommand::Period3)) {
+        uint8_t * intVal = reinterpret_cast<uint8_t *>(&rawValue);
+        uint16_t voltage = intVal[0] | ((intVal[1] & 3) << 8);
+        period3_.analogVoltage = float(voltage) / 256.0f;
+        uint32_t velocity =
+          ((intVal[1] >> 2) & 0x3F) | (uint32_t(intVal[2]) << 6) | (uint32_t(intVal[3]) << 14);
+        period3_.analogVelocity = float(velocity) / 32768.0f;
+        uint32_t position = (rawValue >> 32) & 0xFFFFFFFF;
+        std::memcpy(&period3_.analogPosition, &position, 4);
+        period3_.timestamp = now;
+      } else if (receivedArbId == CreateArbId(APICommand::Period4)) {
+        uint32_t velocity = rawValue & 0xFFFFFFFF;
+        uint32_t position = (rawValue >> 32) & 0xFFFFFFFF;
+        std::memcpy(&period4_.altEncoderVelocity, &velocity, 4);
+        std::memcpy(&period4_.altEncoderPosition, &position, 4);
+        period4_.timestamp = now;
+      }
+    }
+  }
 }
 
 void SparkBase::Heartbeat()
@@ -539,137 +566,108 @@ void SparkBase::SetPeriodicStatus4Period(uint16_t period)
 // Period 0
 float SparkBase::GetDutyCycle() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period0);
-  int16_t dutyCycle = static_cast<int16_t>(status & 0xFFFF);
-  return static_cast<float>(dutyCycle) / 32768.0f;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period0_.dutyCycle;
 }
 
 uint16_t SparkBase::GetFaults() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period0);
-  return (status >> 16) & 0xFFFF;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period0_.faults;
 }
 
 uint16_t SparkBase::GetStickyFaults() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period0);
-  return (status >> 32) & 0xFFFF;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period0_.stickyFaults;
 }
 
-bool SparkBase::isInverted() const
+bool SparkBase::IsInverted() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period0);
-  return ((status >> 49) & 0x01) != 0;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period0_.isInverted;
 }
 
 bool SparkBase::GetIdleMode() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period0);
-  return static_cast<bool>((status >> 57) & 0x01);
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period0_.idleMode;
 }
 
 bool SparkBase::IsFollower() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period0);
-  return static_cast<bool>((status >> 58) & 0x01);
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period0_.isFollower;
 }
 
 // Period 1
 float SparkBase::GetVelocity() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period1);
-  uint32_t velRaw = static_cast<uint32_t>(status & 0xFFFFFFFF);
-  float vel;
-  std::memcpy(&vel, &velRaw, sizeof(float));
-  return vel;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period1_.velocity;
 }
 
 float SparkBase::GetTemperature() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period1);
-  uint8_t temp = (status >> 32) & 0xFF;
-  return static_cast<float>(temp);
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period1_.temperature;
 }
 
 float SparkBase::GetVoltage() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period1);
-  uint16_t voltage = (status >> 40) & 0xFFFF;
-  return static_cast<float>(voltage) / 128.0f;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period1_.voltage;
 }
 
 float SparkBase::GetCurrent() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period1);
-  uint16_t current = (status >> 48) & 0xFFF;
-  return static_cast<float>(current) / 32.0f;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period1_.current;
 }
 
 // Period 2
 float SparkBase::GetPosition() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period2);
-  uint32_t posRaw = status & 0xFFFFFFFF;
-  float pos;
-  memcpy(&pos, &posRaw, sizeof(float));
-  return pos;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period2_.position;
 }
 
 float SparkBase::GetIAccum() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period2);
-  uint32_t accumRaw = (status >> 32) & 0xFFFFFFFF;
-  return static_cast<float>(accumRaw) / 1000.0f;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period2_.iAccum;
 }
 
 // Period 3
 float SparkBase::GetAnalogVoltage() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period3);
-  uint8_t * s = reinterpret_cast<uint8_t *>(&status);
-
-  uint16_t voltageRaw = s[0] | ((s[1] & 0x03) << 8);
-  return static_cast<float>(voltageRaw) / 256.0f;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period3_.analogVoltage;
 }
 
 float SparkBase::GetAnalogVelocity() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period3);
-  uint8_t * s = reinterpret_cast<uint8_t *>(&status);
-
-  uint32_t velRaw = ((s[1] >> 2) & 0x3F) |
-    (static_cast<uint32_t>(s[2]) << 6) |
-    (static_cast<uint32_t>(s[3]) << 14);
-
-  return static_cast<float>(velRaw) / 32768.0f;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period3_.analogVelocity;
 }
 
 float SparkBase::GetAnalogPosition() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period3);
-  uint32_t posRaw = (status >> 32) & 0xFFFFFFFF;
-  float pos;
-  std::memcpy(&pos, &posRaw, sizeof(float));
-  return pos;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period3_.analogPosition;
 }
 
 // Period 4
 float SparkBase::GetAltEncoderVelocity() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period4);
-  uint32_t velRaw = status & 0xFFFFFFFF;
-  float vel;
-  std::memcpy(&vel, &velRaw, sizeof(float));
-  return vel;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period4_.altEncoderVelocity;
 }
 
 float SparkBase::GetAltEncoderPosition() const
 {
-  uint64_t status = ReadPeriodicStatus(APICommand::Period4);
-  uint32_t posRaw = (status >> 32) & 0xFFFFFFFF;
-  float pos;
-  std::memcpy(&pos, &posRaw, sizeof(float));
-  return pos;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return period4_.altEncoderPosition;
 }
 
 // Parameter Setters //

@@ -8,14 +8,17 @@
 #define SPARKBASE_HPP
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <fcntl.h>
 #include <iostream>
 #include <limits>
 #include <linux/can.h>
 #include <map>
+#include <mutex>
 #include <net/if.h>
 #include <optional>
 #include <ostream>
@@ -27,14 +30,16 @@
 #include <variant>
 #include <vector>
 
-#define RED "\033[31m"     ///< ANSI escape code for setting terminal text color to red
-#define YELLOW "\033[33m"  ///< ANSI escape code for setting terminal text color to yellow
-#define CYAN "\033[36m"    ///< ANSI escape code for setting terminal text color to cyan
-#define GREEN "\033[32m"   ///< ANSI escape code for setting terminal text color to green
-#define RESET "\033[0m"    ///< ANSI escape code for resetting terminal text color to default
+#define RED "\033[31m"    ///< ANSI escape code for setting terminal text color to red
+#define YELLOW "\033[33m" ///< ANSI escape code for setting terminal text color to yellow
+#define CYAN "\033[36m"   ///< ANSI escape code for setting terminal text color to cyan
+#define GREEN "\033[32m"  ///< ANSI escape code for setting terminal text color to green
+#define RESET "\033[0m"   ///< ANSI escape code for resetting terminal text color to default
 
-#define DEVICE_TYPE 0x02
-#define MANUFACTURER 0x05
+#define DEVICE_TYPE 0x02  ///< Device type for SPARK controllers
+#define MANUFACTURER 0x05 ///< Manufacturer ID for REV Robotics
+
+#define READ_TIMEOUT_US 20000 ///< Timeout for reading CAN messages in microseconds
 
 constexpr uint8_t PARAM_TYPE_UINT = 0x01;  ///< Parameter type for unsigned integers
 constexpr uint8_t PARAM_TYPE_FLOAT = 0x02; ///< Parameter type for floating-point numbers
@@ -48,28 +53,28 @@ constexpr uint8_t PARAM_TYPE_BOOL = 0x03;  ///< Parameter type for boolean value
  */
 enum class APICommand : uint16_t
 {
-  ClearFaults     = (6 << 4) | 14,
+  ClearFaults = (6 << 4) | 14,
   FactoryDefaults = (7 << 4) | 4,
-  FactoryReset    = (7 << 4) | 5,
-  Identify        = (7 << 4) | 6,
-  Heartbeat       = (11 << 4) | 2,
-  BurnFlash       = (63 << 4) | 2,
+  FactoryReset = (7 << 4) | 5,
+  Identify = (7 << 4) | 6,
+  Heartbeat = (11 << 4) | 2,
+  BurnFlash = (63 << 4) | 2,
   FirmwareVersion = (9 << 4) | 8,
 
-  Setpoint        = (0 << 4) | 1,
-  DutyCycle       = (0 << 4) | 2,
-  Velocity        = (1 << 4) | 2,
-  SmartVelocity   = (1 << 4) | 3,
-  Position        = (3 << 4) | 2,
-  Voltage         = (4 << 4) | 2,
-  Current         = (4 << 4) | 3,
-  SmartMotion     = (5 << 4) | 2,
+  Setpoint = (0 << 4) | 1,
+  DutyCycle = (0 << 4) | 2,
+  Velocity = (1 << 4) | 2,
+  SmartVelocity = (1 << 4) | 3,
+  Position = (3 << 4) | 2,
+  Voltage = (4 << 4) | 2,
+  Current = (4 << 4) | 3,
+  SmartMotion = (5 << 4) | 2,
 
-  Period0         = (6 << 4) | 0,
-  Period1         = (6 << 4) | 1,
-  Period2         = (6 << 4) | 2,
-  Period3         = (6 << 4) | 3,
-  Period4         = (6 << 4) | 4
+  Period0 = (6 << 4) | 0,
+  Period1 = (6 << 4) | 1,
+  Period2 = (6 << 4) | 2,
+  Period3 = (6 << 4) | 3,
+  Period4 = (6 << 4) | 4
 };
 
 /**
@@ -254,150 +259,211 @@ enum class IdleMode : uint8_t
 };
 
 /**
+ * @brief Periodic status 0 structure
+ */
+struct Period0Status
+{
+  float dutyCycle;
+  uint16_t faults;
+  uint16_t stickyFaults;
+  bool isInverted;
+  bool idleMode;
+  bool isFollower;
+  std::chrono::steady_clock::time_point timestamp;
+};
+
+/**
+ * @brief Periodic status 1 structure
+ */
+struct Period1Status
+{
+  float velocity;
+  float temperature;
+  float voltage;
+  float current;
+  std::chrono::steady_clock::time_point timestamp;
+};
+
+/**
+ * @brief Periodic status 2 structure
+ */
+struct Period2Status
+{
+  float position;
+  float iAccum;
+  std::chrono::steady_clock::time_point timestamp;
+};
+
+/**
+ * @brief Periodic status 3 structure
+ */
+struct Period3Status
+{
+  float analogVoltage;
+  float analogVelocity;
+  float analogPosition;
+  std::chrono::steady_clock::time_point timestamp;
+};
+
+/**
+ * @brief Periodic status 4 structure
+ */
+struct Period4Status
+{
+  float altEncoderVelocity;
+  float altEncoderPosition;
+  std::chrono::steady_clock::time_point timestamp;
+};
+
+/**
  * @class SparkBase
  * @brief A base class for controlling REV Robotics SPARK motor controllers via CAN bus
  *
  * This class provides methods to configure, control, and monitor SPARK motor controllers
- * It supports various control modes, parameter settings, and status readings
+ * It supports various control modes, parameter settings, and periodic status readings
  */
 class SparkBase
 {
 private:
-  inline static int soc_ = -1;  ///< Socket descriptor for CAN communication
-  std::string interfaceName_;   ///< Name of the CAN interface
-  uint8_t deviceId_;            ///< Device ID for the SPARK controller on the CAN bus
-  struct sockaddr_can addr_;    ///< Socket address for the CAN interface
-  struct ifreq ifr_;            ///< Interface request structure for CAN operations
-  mutable std::map<APICommand,
-    std::pair<uint64_t, std::chrono::steady_clock::time_point>> cachedStatus_; ///< Cache for periodic status data
+  inline static int soc_ = -1;   ///< Socket descriptor for CAN communication
+  std::string interfaceName_;    ///< Name of the CAN interface
+  uint8_t deviceId_;             ///< Device ID for the SPARK controller on the CAN bus
+  struct sockaddr_can addr_;     ///< Socket address for the CAN interface
+  struct ifreq ifr_;             ///< Interface request structure for CAN operations
 
-/**
- * @brief Sends a CAN frame
- *
- * @param cmd The API command associated with the CAN frame
- * @param data The data payload to send in the CAN frame
- */
+  mutable std::mutex mutex_;     ///< Mutex for thread safety
+  std::thread thread_;           ///< Thread for reading periodic status messages
+  std::atomic_bool run_{true};   ///< Flag to control the reading thread
+
+  // Periodic status structures
+  Period0Status period0_{};
+  Period1Status period1_{};
+  Period2Status period2_{};
+  Period3Status period3_{};
+  Period4Status period4_{};
+
+  /**
+   * @brief Sends a CAN frame
+   *
+   * @param cmd The API command associated with the CAN frame
+   * @param data The data payload to send in the CAN frame
+   */
   void SendCanFrame(APICommand cmd, const std::vector<uint8_t> & data) const;
 
+  /**
+   * @brief Sends a CAN frame with a custom arbitration ID
+   *
+   * @param arbId The full CAN arbitration ID
+   * @param data The data payload to send in the CAN frame
+   */
+  void SendCanFrame(uint32_t arbId, const std::vector<uint8_t> & data) const;
 
-/**
- * @brief Sends a CAN frame with a custom arbitration ID
- *
- * @param arbitrationId The full CAN arbitration ID
- * @param data The data payload to send in the CAN frame
- */
-  void SendCanFrame(uint32_t arbitrationId, const std::vector<uint8_t> & data) const;
-
-/**
- * @brief Sends a control message to the SPARK controller
- *
- * @param cmd The API command associated with the control message
- * @param commandName The control command's name
- * @param value The value associated with the control command
- * @param minValue The minimum allowed value for the command (optional)
- * @param maxValue The maximum allowed value for the command (optional)
- *
- * @throws std::invalid_argument If the command value is not finite
- * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype when not provided)
- */
+  /**
+   * @brief Sends a control message to the SPARK controller
+   *
+   * @param cmd The API command associated with the control message
+   * @param commandName The control command's name
+   * @param value The value associated with the control command
+   * @param minValue The minimum allowed value for the command (optional)
+   * @param maxValue The maximum allowed value for the command (optional)
+   *
+   * @throws std::invalid_argument If the command value is not finite
+   * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype
+   * when not provided)
+   */
   void SendControlMessage(
     APICommand cmd, std::string commandName, float value,
     std::optional<float> minValue = std::nullopt,
     std::optional<float> maxValue = std::nullopt) const;
 
-/**
- * @brief Creates an arbitration ID for the SPARK controller
- *
- * @param cmd The API command for which to create the arbitration ID
- * @return uint32_t The created frame ID
- */
-  uint32_t CreateArbitrationId(APICommand cmd) const;
+  /**
+   * @brief Creates an arbitration ID for the SPARK controller
+   *
+   * @param cmd The API command for which to create the arbitration ID
+   * @return uint32_t The created frame ID
+   */
+  uint32_t CreateArbId(APICommand cmd) const;
 
-/**
- * @brief Creates an arbitration ID for a parameter-specific message
- *
- * @param paramId The parameter ID to encode in the arbitration ID
- * @return uint32_t The created frame ID
- */
-  uint32_t CreateParameterArbitrationId(Parameter paramId) const;
+  /**
+   * @brief Creates an arbitration ID for a parameter-specific message
+   *
+   * @param paramId The parameter ID to encode in the arbitration ID
+   * @return uint32_t The created frame ID
+   */
+  uint32_t CreateParamArbId(Parameter paramId) const;
 
-/**
- * @brief Gets the API class from an API command
- *
- * @param cmd The API command
- * @return constexpr uint8_t The API class extracted from the command
- */
+  /**
+   * @brief Gets the API class from an API command
+   *
+   * @param cmd The API command
+   * @return constexpr uint8_t The API class extracted from the command
+   */
   uint8_t GetAPIClass(APICommand cmd) const;
 
-/**
- * @brief Gets the API index from an API command
- *
- * @param cmd The API command
- * @return constexpr uint8_t The API index extracted from the command
- */
+  /**
+   * @brief Gets the API index from an API command
+   *
+   * @param cmd The API command
+   * @return constexpr uint8_t The API index extracted from the command
+   */
   uint8_t GetAPIIndex(APICommand cmd) const;
 
-/**
- * @brief Reads periodic status data from the SPARK controller
- *
- * @param status The API status command associated with the status period to read
- * @return uint64_t The status data read from the controller
- */
-  uint64_t ReadPeriodicStatus(APICommand status) const;
+  /**
+   * @brief Continuously reads periodic status data from the SPARK controller
+   * Updates the status structures with the received data
+   */
+  void ReadPeriodicMessages();
 
-/**
- * @brief Sets a parameter on the SPARK controller
- *
- * @param parameterId The ID of the parameter to set
- * @param parameterType The type of the parameter (e.g., UINT, FLOAT, BOOL)
- * @param parameterName The name of the parameter
- * @param value The value to set the parameter to (can be float, uint32_t, uint16_t, uint8_t, or bool)
- * @param minValue The minimum allowed value for the parameter (optional)
- * @param maxValue The maximum allowed value for the parameter (optional)
- * @param customErrorMessage A custom error message to use if the value is out of range (optional)
- *
- * @throws std::invalid_argument If the parameter type is invalid or if a float value is not finite
- * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype when not provided)
- */
+  /**
+   * @brief Sets a parameter on the SPARK controller
+   *
+   * @param parameterId The ID of the parameter to set
+   * @param parameterType The type of the parameter (e.g., UINT, FLOAT, BOOL)
+   * @param parameterName The name of the parameter
+   * @param value The value to set the parameter to (can be float, uint32_t, uint16_t, uint8_t, or bool)
+   * @param minValue The minimum allowed value for the parameter (optional)
+   * @param maxValue The maximum allowed value for the parameter (optional)
+   * @param customErrorMessage A custom error message to use if the value is out of range (optional)
+   *
+   * @throws std::invalid_argument If the parameter type is invalid or if a float value is not finite
+   * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype
+   * when not provided)
+   */
   void SetParameter(
-    Parameter parameterId,
-    uint8_t parameterType,
-    std::string parameterName,
+    Parameter parameterId, uint8_t parameterType, std::string parameterName,
     std::variant<float, uint32_t, uint16_t, uint8_t, bool> value,
-    std::optional<float> minValue = std::nullopt,
-    std::optional<float> maxValue = std::nullopt,
+    std::optional<float> minValue = std::nullopt, std::optional<float> maxValue = std::nullopt,
     std::optional<std::string> customErrorMessage = std::nullopt);
 
-/**
- * @brief Reads the value of a specified parameter from the device
- *
- * @param parameterId The ID of the parameter to read (enumerated by the Parameter type)
- * @return std::optional<std::variant<float, uint32_t, bool>> The parameter value if received, or std::nullopt if no response
- */
+  /**
+   * @brief Reads the value of a specified parameter from the device
+   *
+   * @param parameterId The ID of the parameter to read (enumerated by the Parameter type)
+   * @return std::optional<std::variant<float, uint32_t, bool>> The parameter value if received, or std::nullopt if no
+   * response
+   */
   std::optional<std::variant<float, uint32_t, bool>> ReadParameter(Parameter parameterId);
 
-/**
- * @brief Internal helper to get a parameter as a specific type
- *        If no response or wrong type, returns default based on type
- * @tparam T The expected return type
- * @param param The parameter ID
- * @param name A debug name used in error messages
- * @return Value of parameter or type-based default fallback
- */
-  template<typename T>
-  T GetParamAs(Parameter param, const char * name);
+  /**
+   * @brief Internal helper to get a parameter as a specific type
+   *        If no response or wrong type, returns default based on type
+   * @tparam T The expected return type
+   * @param param The parameter ID
+   * @param name A debug name used in error messages
+   * @return Value of parameter or type-based default fallback
+   */
+  template<typename T> T GetParamAs(Parameter param, const char * name);
 
-/**
- * @brief Internal helper to get a slot-indexed parameter
- *
- * @tparam T The expected return type
- * @param baseParam The base parameter enum for slot 0
- * @param slot The PID slot index (0–3)
- * @param name A debug name used in error messages
- * @return Value of the slot-specific parameter
- */
-  template<typename T>
-  T GetPIDParam(Parameter baseParam, uint8_t slot, const char * name);
+  /**
+   * @brief Internal helper to get a slot-indexed parameter
+   *
+   * @tparam T The expected return type
+   * @param baseParam The base parameter enum for slot 0
+   * @param slot The PID slot index (0–3)
+   * @param name A debug name used in error messages
+   * @return Value of the slot-specific parameter
+   */
+  template<typename T> T GetPIDParam(Parameter baseParam, uint8_t slot, const char * name);
 
 public:
   /**
@@ -473,6 +539,7 @@ public:
   void Identify();
 
   // Motor Control Methods //
+
   /**
    * @brief Sets the value for the currently set control type
    * @param setpoint The desired value
@@ -575,7 +642,7 @@ public:
    * @brief Checks if the motor is inverted
    * @return bool True if the motor is inverted, false otherwise
    */
-  bool isInverted() const;
+  bool IsInverted() const;
 
   /**
    * @brief Gets the current idle mode
@@ -671,7 +738,8 @@ public:
 
   /**
    * @brief Sets the sensor type
-   * @param sensor SensorType::kNoSensor for No Sensor, SensorType::kHallSensor for Hall Sensor, SensorType::kEncoder for Encoder
+   * @param sensor SensorType::kNoSensor for No Sensor, SensorType::kHallSensor for Hall Sensor, SensorType::kEncoder
+   * for Encoder
    */
   void SetSensorType(SensorType sensor);
 
@@ -724,7 +792,8 @@ public:
 
   /**
    * @brief Sets the control type
-   * @param type CtrlType::kDutyCycle for Duty Cycle, CtrlType::kVelocity for Velocity, CtrlType::kVoltage for Voltage, CtrlType::kPosition for Position
+   * @param type CtrlType::kDutyCycle for Duty Cycle, CtrlType::kVelocity for Velocity, CtrlType::kVoltage for
+   * Voltage, CtrlType::kPosition for Position
    */
   void SetCtrlType(CtrlType type);
 
