@@ -534,7 +534,7 @@ void SparkBase::SetSmartMotion(float smartMotion)
 
 void SparkBase::SetPeriodicStatus0Period(uint16_t period)
 {
-  std::vector<uint8_t> data(8, 0xFF);
+  std::vector<uint8_t> data(2, 0x00);
   data[0] = static_cast<uint8_t>(period & 0xFF);
   data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
   SendCanFrame(APICommand::Period0, data);
@@ -542,7 +542,7 @@ void SparkBase::SetPeriodicStatus0Period(uint16_t period)
 
 void SparkBase::SetPeriodicStatus1Period(uint16_t period)
 {
-  std::vector<uint8_t> data(8, 0xFF);
+  std::vector<uint8_t> data(2, 0x00);
   data[0] = static_cast<uint8_t>(period & 0xFF);
   data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
   SendCanFrame(APICommand::Period1, data);
@@ -550,7 +550,7 @@ void SparkBase::SetPeriodicStatus1Period(uint16_t period)
 
 void SparkBase::SetPeriodicStatus2Period(uint16_t period)
 {
-  std::vector<uint8_t> data(8, 0xFF);
+  std::vector<uint8_t> data(2, 0x00);
   data[0] = static_cast<uint8_t>(period & 0xFF);
   data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
   SendCanFrame(APICommand::Period2, data);
@@ -558,7 +558,7 @@ void SparkBase::SetPeriodicStatus2Period(uint16_t period)
 
 void SparkBase::SetPeriodicStatus3Period(uint16_t period)
 {
-  std::vector<uint8_t> data(8, 0xFF);
+  std::vector<uint8_t> data(2, 0x00);
   data[0] = static_cast<uint8_t>(period & 0xFF);
   data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
   SendCanFrame(APICommand::Period3, data);
@@ -566,7 +566,7 @@ void SparkBase::SetPeriodicStatus3Period(uint16_t period)
 
 void SparkBase::SetPeriodicStatus4Period(uint16_t period)
 {
-  std::vector<uint8_t> data(8, 0xFF);
+  std::vector<uint8_t> data(2, 0x00);
   data[0] = static_cast<uint8_t>(period & 0xFF);
   data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
   SendCanFrame(APICommand::Period4, data);
