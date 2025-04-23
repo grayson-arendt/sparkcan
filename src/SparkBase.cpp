@@ -55,20 +55,34 @@ SparkBase::SparkBase(const std::string & interfaceName, uint8_t deviceId)
   constexpr uint8_t MAX_FIRMWARE_RETRIES = 30;
 
   while (!firmwareVersion && firmwareRetryCount < MAX_FIRMWARE_RETRIES) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Wait before retrying
+    // Check if the CAN socket is writable
+    fd_set write_fds;
+    FD_ZERO(&write_fds);
+    FD_SET(soc_, &write_fds);
+
+    struct timeval timeout = {0, 100000}; // 100 ms timeout
+    int ret = select(soc_ + 1, nullptr, &write_fds, nullptr, &timeout);
+
+    if (ret > 0 && FD_ISSET(soc_, &write_fds)) {
       firmwareVersion = ReadFirmwareVersion();
       ++firmwareRetryCount;
+    } else if (ret < 0) {
+      throw std::runtime_error(
+              RED "Error checking CAN socket writability: " + std::string(strerror(errno)) + RESET);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Wait before retrying
   }
 
   if (firmwareVersion) {
-      auto [major, minor, patch, build, isDebug] = *firmwareVersion;
-      std::cout << CYAN "Firmware version: " RESET
-                << GREEN << static_cast<int>(major) << "."
-                << static_cast<int>(minor) << "."
-                << static_cast<int>(patch) << RESET << std::endl;
+    auto [major, minor, patch, build, isDebug] = *firmwareVersion;
+    std::cout << CYAN "Firmware version: " RESET
+              << GREEN << static_cast<int>(major) << "."
+              << static_cast<int>(minor) << "."
+              << static_cast<int>(patch) << RESET << std::endl;
   } else {
-      throw std::runtime_error(
-          RED "Failed to read firmware version after 30 attempts. \nPlease make sure you are using any version between 1.5.0 and 24.0.1. Will not work on 25.0.0 or higher." RESET);
+    throw std::runtime_error(
+            RED "Failed to read firmware version after 30 attempts. \nPlease make sure you are using any version between 1.5.0 and 24.0.1. Will not work on 25.0.0 or higher." RESET);
   }
 }
 
@@ -475,46 +489,6 @@ void SparkBase::ClearStickyFaults()
   SendCanFrame(APICommand::ClearFaults, data);
 }
 
-void SparkBase::SetPeriodicStatus0Period(uint16_t period)
-{
-  std::vector<uint8_t> data(8, 0xFF);
-  data[0] = static_cast<uint8_t>(period & 0xFF);
-  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
-  SendCanFrame(APICommand::Period0, data);
-}
-
-void SparkBase::SetPeriodicStatus1Period(uint16_t period)
-{
-  std::vector<uint8_t> data(8, 0xFF);
-  data[0] = static_cast<uint8_t>(period & 0xFF);
-  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
-  SendCanFrame(APICommand::Period1, data);
-}
-
-void SparkBase::SetPeriodicStatus2Period(uint16_t period)
-{
-  std::vector<uint8_t> data(8, 0xFF);
-  data[0] = static_cast<uint8_t>(period & 0xFF);
-  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
-  SendCanFrame(APICommand::Period2, data);
-}
-
-void SparkBase::SetPeriodicStatus3Period(uint16_t period)
-{
-  std::vector<uint8_t> data(8, 0xFF);
-  data[0] = static_cast<uint8_t>(period & 0xFF);
-  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
-  SendCanFrame(APICommand::Period3, data);
-}
-
-void SparkBase::SetPeriodicStatus4Period(uint16_t period)
-{
-  std::vector<uint8_t> data(8, 0xFF);
-  data[0] = static_cast<uint8_t>(period & 0xFF);
-  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
-  SendCanFrame(APICommand::Period4, data);
-}
-
 // Motor Control //
 void SparkBase::SetSetpoint(float setpoint)
 {
@@ -557,6 +531,46 @@ void SparkBase::SetSmartMotion(float smartMotion)
 }
 
 // Status //
+
+void SparkBase::SetPeriodicStatus0Period(uint16_t period)
+{
+  std::vector<uint8_t> data(8, 0xFF);
+  data[0] = static_cast<uint8_t>(period & 0xFF);
+  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
+  SendCanFrame(APICommand::Period0, data);
+}
+
+void SparkBase::SetPeriodicStatus1Period(uint16_t period)
+{
+  std::vector<uint8_t> data(8, 0xFF);
+  data[0] = static_cast<uint8_t>(period & 0xFF);
+  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
+  SendCanFrame(APICommand::Period1, data);
+}
+
+void SparkBase::SetPeriodicStatus2Period(uint16_t period)
+{
+  std::vector<uint8_t> data(8, 0xFF);
+  data[0] = static_cast<uint8_t>(period & 0xFF);
+  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
+  SendCanFrame(APICommand::Period2, data);
+}
+
+void SparkBase::SetPeriodicStatus3Period(uint16_t period)
+{
+  std::vector<uint8_t> data(8, 0xFF);
+  data[0] = static_cast<uint8_t>(period & 0xFF);
+  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
+  SendCanFrame(APICommand::Period3, data);
+}
+
+void SparkBase::SetPeriodicStatus4Period(uint16_t period)
+{
+  std::vector<uint8_t> data(8, 0xFF);
+  data[0] = static_cast<uint8_t>(period & 0xFF);
+  data[1] = static_cast<uint8_t>((period >> 8) & 0xFF);
+  SendCanFrame(APICommand::Period4, data);
+}
 
 // Period 0
 float SparkBase::GetDutyCycle() const
