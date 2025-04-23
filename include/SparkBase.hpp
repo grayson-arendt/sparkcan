@@ -472,8 +472,37 @@ public:
    */
   void Identify();
 
-  // Motor Control Methods //
+  /**
+   * @brief Sets the period for periodic status 0
+   * @param period The desired status period in milliseconds
+   */
+  void SetPeriodicStatus0Period(uint16_t period);
 
+  /**
+   * @brief Sets the period for periodic status 1
+   * @param period The desired status period in milliseconds
+   */
+  void SetPeriodicStatus1Period(uint16_t period);
+
+    /**
+   * @brief Sets the period for periodic status 2
+   * @param period The desired status period in milliseconds
+   */
+  void SetPeriodicStatus2Period(uint16_t period);
+
+    /**
+   * @brief Sets the period for periodic status 3
+   * @param period The desired status period in milliseconds
+   */
+  void SetPeriodicStatus3Period(uint16_t period);
+
+  /**
+   * @brief Sets the period for periodic status 4
+   * @param period The desired status period in milliseconds
+   */
+  void SetPeriodicStatus4Period(uint16_t period);
+
+  // Motor Control Methods //
   /**
    * @brief Sets the value for the currently set control type
    * @param setpoint The desired value
