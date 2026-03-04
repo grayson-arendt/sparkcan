@@ -7,43 +7,23 @@
 #ifndef SPARKBASE_HPP
 #define SPARKBASE_HPP
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
-#include <iostream>
-#include <limits>
 #include <linux/can.h>
-#include <map>
 #include <mutex>
 #include <net/if.h>
 #include <optional>
-#include <ostream>
 #include <stdexcept>
 #include <sys/ioctl.h>
 #include <system_error>
 #include <thread>
 #include <unistd.h>
 #include <variant>
-#include <vector>
-
-#define RED "\033[31m"    ///< ANSI escape code for setting terminal text color to red
-#define YELLOW "\033[33m" ///< ANSI escape code for setting terminal text color to yellow
-#define CYAN "\033[36m"   ///< ANSI escape code for setting terminal text color to cyan
-#define GREEN "\033[32m"  ///< ANSI escape code for setting terminal text color to green
-#define RESET "\033[0m"   ///< ANSI escape code for resetting terminal text color to default
-
-#define DEVICE_TYPE 0x02  ///< Device type for SPARK controllers
-#define MANUFACTURER 0x05 ///< Manufacturer ID for REV Robotics
-
-#define READ_TIMEOUT_US 20000 ///< Timeout for reading CAN messages in microseconds
-
-constexpr uint8_t PARAM_TYPE_UINT = 0x01;  ///< Parameter type for unsigned integers
-constexpr uint8_t PARAM_TYPE_FLOAT = 0x02; ///< Parameter type for floating-point numbers
-constexpr uint8_t PARAM_TYPE_BOOL = 0x03;  ///< Parameter type for boolean values
 
 /**
  * @brief API commands for the SPARK controller
@@ -53,22 +33,22 @@ constexpr uint8_t PARAM_TYPE_BOOL = 0x03;  ///< Parameter type for boolean value
  */
 enum class APICommand : uint16_t
 {
-  ClearFaults = (6 << 4) | 14,
+  ClearFaults     = (6 << 4) | 14,
   FactoryDefaults = (7 << 4) | 4,
-  FactoryReset = (7 << 4) | 5,
-  Identify = (7 << 4) | 6,
-  Heartbeat = (11 << 4) | 2,
-  BurnFlash = (63 << 4) | 2,
+  FactoryReset    = (7 << 4) | 5,
+  Identify        = (7 << 4) | 6,
+  Heartbeat       = (11 << 4) | 2,
+  BurnFlash       = (63 << 4) | 2,
   FirmwareVersion = (9 << 4) | 8,
 
-  Setpoint = (0 << 4) | 1,
-  DutyCycle = (0 << 4) | 2,
-  Velocity = (1 << 4) | 2,
+  Setpoint      = (0 << 4) | 1,
+  DutyCycle     = (0 << 4) | 2,
+  Velocity      = (1 << 4) | 2,
   SmartVelocity = (1 << 4) | 3,
-  Position = (3 << 4) | 2,
-  Voltage = (4 << 4) | 2,
-  Current = (4 << 4) | 3,
-  SmartMotion = (5 << 4) | 2,
+  Position      = (3 << 4) | 2,
+  Voltage       = (4 << 4) | 2,
+  Current       = (4 << 4) | 3,
+  SmartMotion   = (5 << 4) | 2,
 
   Period0 = (6 << 4) | 0,
   Period1 = (6 << 4) | 1,
@@ -82,141 +62,141 @@ enum class APICommand : uint16_t
  */
 enum class Parameter : uint32_t
 {
-  kInputMode = 1,
-  kMotorType = 2,
-  kCommAdvance = 3,
-  kSensorType = 4,
-  kCtrlType = 5,
-  kIdleMode = 6,
-  kInputDeadband = 7,
-  kFeedbackSensorPID0 = 8,
-  kFeedbackSensorPID1 = 9,
-  kPolePairs = 10,
-  kCurrentChop = 11,
-  kCurrentChopCycles = 12,
-  kP_0 = 13,
-  kI_0 = 14,
-  kD_0 = 15,
-  kF_0 = 16,
-  kIZone_0 = 17,
-  kDFilter_0 = 18,
-  kOutputMin_0 = 19,
-  kOutputMax_0 = 20,
-  kP_1 = 21,
-  kI_1 = 22,
-  kD_1 = 23,
-  kF_1 = 24,
-  kIZone_1 = 25,
-  kDFilter_1 = 26,
-  kOutputMin_1 = 27,
-  kOutputMax_1 = 28,
-  kP_2 = 29,
-  kI_2 = 30,
-  kD_2 = 31,
-  kF_2 = 32,
-  kIZone_2 = 33,
-  kDFilter_2 = 34,
-  kOutputMin_2 = 35,
-  kOutputMax_2 = 36,
-  kP_3 = 37,
-  kI_3 = 38,
-  kD_3 = 39,
-  kF_3 = 40,
-  kIZone_3 = 41,
-  kDFilter_3 = 42,
-  kOutputMin_3 = 43,
-  kOutputMax_3 = 44,
-  kInverted = 45,
-  kOutputRatio = 46,
-  kSerialNumberLow = 47,
-  kSerialNumberMid = 48,
-  kSerialNumberHigh = 49,
-  kLimitSwitchFwdPolarity = 50,
-  kLimitSwitchRevPolarity = 51,
-  kHardLimitFwdEn = 52,
-  kHardLimitRevEn = 53,
-  kSoftLimitFwdEn = 54,
-  kSoftLimitRevEn = 55,
-  kRampRate = 56,
-  kFollowerID = 57,
-  kFollowerConfig = 58,
-  kSmartCurrentStallLimit = 59,
-  kSmartCurrentFreeLimit = 60,
-  kSmartCurrentConfig = 61,
-  kMotorKv = 63,
-  kMotorR = 64,
-  kMotorL = 65,
-  kEncoderCountsPerRev = 69,
-  kEncoderAverageDepth = 70,
-  kEncoderSampleDelta = 71,
-  kEncoderInverted = 72,
-  kClosedLoopVoltageMode = 74,
-  kCompensatedNominalVoltage = 75,
-  kSmartMotionMaxVelocity_0 = 76,
-  kSmartMotionMaxAccel_0 = 77,
-  kSmartMotionMinVelOutput_0 = 78,
+  kInputMode                           = 1,
+  kMotorType                           = 2,
+  kCommAdvance                         = 3,
+  kSensorType                          = 4,
+  kCtrlType                            = 5,
+  kIdleMode                            = 6,
+  kInputDeadband                       = 7,
+  kFeedbackSensorPID0                  = 8,
+  kFeedbackSensorPID1                  = 9,
+  kPolePairs                           = 10,
+  kCurrentChop                         = 11,
+  kCurrentChopCycles                   = 12,
+  kP_0                                 = 13,
+  kI_0                                 = 14,
+  kD_0                                 = 15,
+  kF_0                                 = 16,
+  kIZone_0                             = 17,
+  kDFilter_0                           = 18,
+  kOutputMin_0                         = 19,
+  kOutputMax_0                         = 20,
+  kP_1                                 = 21,
+  kI_1                                 = 22,
+  kD_1                                 = 23,
+  kF_1                                 = 24,
+  kIZone_1                             = 25,
+  kDFilter_1                           = 26,
+  kOutputMin_1                         = 27,
+  kOutputMax_1                         = 28,
+  kP_2                                 = 29,
+  kI_2                                 = 30,
+  kD_2                                 = 31,
+  kF_2                                 = 32,
+  kIZone_2                             = 33,
+  kDFilter_2                           = 34,
+  kOutputMin_2                         = 35,
+  kOutputMax_2                         = 36,
+  kP_3                                 = 37,
+  kI_3                                 = 38,
+  kD_3                                 = 39,
+  kF_3                                 = 40,
+  kIZone_3                             = 41,
+  kDFilter_3                           = 42,
+  kOutputMin_3                         = 43,
+  kOutputMax_3                         = 44,
+  kInverted                            = 45,
+  kOutputRatio                         = 46,
+  kSerialNumberLow                     = 47,
+  kSerialNumberMid                     = 48,
+  kSerialNumberHigh                    = 49,
+  kLimitSwitchFwdPolarity              = 50,
+  kLimitSwitchRevPolarity              = 51,
+  kHardLimitFwdEn                      = 52,
+  kHardLimitRevEn                      = 53,
+  kSoftLimitFwdEn                      = 54,
+  kSoftLimitRevEn                      = 55,
+  kRampRate                            = 56,
+  kFollowerID                          = 57,
+  kFollowerConfig                      = 58,
+  kSmartCurrentStallLimit              = 59,
+  kSmartCurrentFreeLimit               = 60,
+  kSmartCurrentConfig                  = 61,
+  kMotorKv                             = 63,
+  kMotorR                              = 64,
+  kMotorL                              = 65,
+  kEncoderCountsPerRev                 = 69,
+  kEncoderAverageDepth                 = 70,
+  kEncoderSampleDelta                  = 71,
+  kEncoderInverted                     = 72,
+  kClosedLoopVoltageMode               = 74,
+  kCompensatedNominalVoltage           = 75,
+  kSmartMotionMaxVelocity_0            = 76,
+  kSmartMotionMaxAccel_0               = 77,
+  kSmartMotionMinVelOutput_0           = 78,
   kSmartMotionAllowedClosedLoopError_0 = 79,
-  kSmartMotionAccelStrategy_0 = 80,
-  kSmartMotionMaxVelocity_1 = 81,
-  kSmartMotionMaxAccel_1 = 82,
-  kSmartMotionMinVelOutput_1 = 83,
+  kSmartMotionAccelStrategy_0          = 80,
+  kSmartMotionMaxVelocity_1            = 81,
+  kSmartMotionMaxAccel_1               = 82,
+  kSmartMotionMinVelOutput_1           = 83,
   kSmartMotionAllowedClosedLoopError_1 = 84,
-  kSmartMotionAccelStrategy_1 = 85,
-  kSmartMotionMaxVelocity_2 = 86,
-  kSmartMotionMaxAccel_2 = 87,
-  kSmartMotionMinVelOutput_2 = 88,
+  kSmartMotionAccelStrategy_1          = 85,
+  kSmartMotionMaxVelocity_2            = 86,
+  kSmartMotionMaxAccel_2               = 87,
+  kSmartMotionMinVelOutput_2           = 88,
   kSmartMotionAllowedClosedLoopError_2 = 89,
-  kSmartMotionAccelStrategy_2 = 90,
-  kSmartMotionMaxVelocity_3 = 91,
-  kSmartMotionMaxAccel_3 = 92,
-  kSmartMotionMinVelOutput_3 = 93,
+  kSmartMotionAccelStrategy_2          = 90,
+  kSmartMotionMaxVelocity_3            = 91,
+  kSmartMotionMaxAccel_3               = 92,
+  kSmartMotionMinVelOutput_3           = 93,
   kSmartMotionAllowedClosedLoopError_3 = 94,
-  kSmartMotionAccelStrategy_3 = 95,
-  kIMaxAccum_0 = 96,
-  kSlot3Placeholder1_0 = 97,
-  kSlot3Placeholder2_0 = 98,
-  kSlot3Placeholder3_0 = 99,
-  kIMaxAccum_1 = 100,
-  kSlot3Placeholder1_1 = 101,
-  kSlot3Placeholder2_1 = 102,
-  kSlot3Placeholder3_1 = 103,
-  kIMaxAccum_2 = 104,
-  kSlot3Placeholder1_2 = 105,
-  kSlot3Placeholder2_2 = 106,
-  kSlot3Placeholder3_2 = 107,
-  kIMaxAccum_3 = 108,
-  kSlot3Placeholder1_3 = 109,
-  kSlot3Placeholder2_3 = 110,
-  kSlot3Placeholder3_3 = 111,
-  kPositionConversionFactor = 112,
-  kVelocityConversionFactor = 113,
-  kClosedLoopRampRate = 114,
-  kSoftLimitFwd = 115,
-  kSoftLimitRev = 116,
-  kAnalogPositionConversion = 119,
-  kAnalogVelocityConversion = 120,
-  kAnalogAverageDepth = 121,
-  kAnalogSensorMode = 122,
-  kAnalogInverted = 123,
-  kAnalogSampleDelta = 124,
-  kDataPortConfig = 127,
-  kAltEncoderCountsPerRev = 128,
-  kAltEncoderAverageDepth = 129,
-  kAltEncoderSampleDelta = 130,
-  kAltEncoderInverted = 131,
-  kAltEncoderPositionFactor = 132,
-  kAltEncoderVelocityFactor = 133,
-  kHallSensorSampleRate = 136,
-  kHallSensorAverageDepth = 137,
-  kDutyCyclePositionFactor = 139,
-  kDutyCycleVelocityFactor = 140,
-  kDutyCycleInverted = 141,
-  kDutyCycleAverageDepth = 143,
-  kPositionPIDWrapEnable = 149,
-  kPositionPIDMinInput = 150,
-  kPositionPIDMaxInput = 151,
-  kDutyCyclePrescalar = 153,
-  kDutyCycleZeroOffset = 154
+  kSmartMotionAccelStrategy_3          = 95,
+  kIMaxAccum_0                         = 96,
+  kSlot3Placeholder1_0                 = 97,
+  kSlot3Placeholder2_0                 = 98,
+  kSlot3Placeholder3_0                 = 99,
+  kIMaxAccum_1                         = 100,
+  kSlot3Placeholder1_1                 = 101,
+  kSlot3Placeholder2_1                 = 102,
+  kSlot3Placeholder3_1                 = 103,
+  kIMaxAccum_2                         = 104,
+  kSlot3Placeholder1_2                 = 105,
+  kSlot3Placeholder2_2                 = 106,
+  kSlot3Placeholder3_2                 = 107,
+  kIMaxAccum_3                         = 108,
+  kSlot3Placeholder1_3                 = 109,
+  kSlot3Placeholder2_3                 = 110,
+  kSlot3Placeholder3_3                 = 111,
+  kPositionConversionFactor            = 112,
+  kVelocityConversionFactor            = 113,
+  kClosedLoopRampRate                  = 114,
+  kSoftLimitFwd                        = 115,
+  kSoftLimitRev                        = 116,
+  kAnalogPositionConversion            = 119,
+  kAnalogVelocityConversion            = 120,
+  kAnalogAverageDepth                  = 121,
+  kAnalogSensorMode                    = 122,
+  kAnalogInverted                      = 123,
+  kAnalogSampleDelta                   = 124,
+  kDataPortConfig                      = 127,
+  kAltEncoderCountsPerRev              = 128,
+  kAltEncoderAverageDepth              = 129,
+  kAltEncoderSampleDelta               = 130,
+  kAltEncoderInverted                  = 131,
+  kAltEncoderPositionFactor            = 132,
+  kAltEncoderVelocityFactor            = 133,
+  kHallSensorSampleRate                = 136,
+  kHallSensorAverageDepth              = 137,
+  kDutyCyclePositionFactor             = 139,
+  kDutyCycleVelocityFactor             = 140,
+  kDutyCycleInverted                   = 141,
+  kDutyCycleAverageDepth               = 143,
+  kPositionPIDWrapEnable               = 149,
+  kPositionPIDMinInput                 = 150,
+  kPositionPIDMaxInput                 = 151,
+  kDutyCyclePrescalar                  = 153,
+  kDutyCycleZeroOffset                 = 154
 };
 
 /**
@@ -224,7 +204,7 @@ enum class Parameter : uint32_t
  */
 enum class MotorType : uint8_t
 {
-  kBrushed = 0,
+  kBrushed   = 0,
   kBrushless = 1
 };
 
@@ -233,9 +213,9 @@ enum class MotorType : uint8_t
  */
 enum class SensorType : uint8_t
 {
-  kNoSensor = 0,
+  kNoSensor   = 0,
   kHallSensor = 1,
-  kEncoder = 2
+  kEncoder    = 2
 };
 
 /**
@@ -244,9 +224,9 @@ enum class SensorType : uint8_t
 enum class CtrlType : uint8_t
 {
   kDutyCycle = 0,
-  kVelocity = 1,
-  kVoltage = 2,
-  kPosition = 3
+  kVelocity  = 1,
+  kVoltage   = 2,
+  kPosition  = 3
 };
 
 /**
@@ -325,15 +305,15 @@ struct Period4Status
 class SparkBase
 {
 private:
-  inline static int soc_ = -1;   ///< Socket descriptor for CAN communication
-  std::string interfaceName_;    ///< Name of the CAN interface
-  uint8_t deviceId_;             ///< Device ID for the SPARK controller on the CAN bus
-  struct sockaddr_can addr_;     ///< Socket address for the CAN interface
-  struct ifreq ifr_;             ///< Interface request structure for CAN operations
+  inline static int soc_ = -1;    ///< Socket descriptor for CAN communication
+  char interfaceName_[IFNAMSIZ];  ///< Name of the CAN interface
+  uint8_t deviceId_;              ///< Device ID for the SPARK controller on the CAN bus
+  struct sockaddr_can addr_;      ///< Socket address for the CAN interface
+  struct ifreq ifr_;              ///< Interface request structure for CAN operations
 
-  mutable std::mutex mutex_;     ///< Mutex for thread safety
-  std::thread thread_;           ///< Thread for reading periodic status messages
-  std::atomic_bool run_{true};   ///< Flag to control the reading thread
+  mutable std::mutex mutex_;    ///< Mutex for thread safety
+  std::thread thread_;          ///< Thread for reading periodic status messages
+  std::atomic_bool run_{true};  ///< Flag to control the reading thread
 
   // Periodic status structures
   Period0Status period0_{};
@@ -343,38 +323,68 @@ private:
   Period4Status period4_{};
 
   /**
-   * @brief Sends a CAN frame
+   * @brief Main send loop, builds frame, retries on ENOBUFS/EAGAIN
    *
-   * @param cmd The API command associated with the CAN frame
-   * @param data The data payload to send in the CAN frame
+   * @param arbId Full 29-bit arbitration ID (without CAN_EFF_FLAG)
+   * @param data  Payload bytes (max 8)
+   * @param len   Number of payload bytes
    */
-  void SendCanFrame(APICommand cmd, const std::vector<uint8_t> & data) const;
+  void WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len) const;
 
   /**
-   * @brief Sends a CAN frame with a custom arbitration ID
+   * @brief Sends a CAN frame using an APICommand to derive the arbitration ID
+   *
+   * @param cmd The API command associated with the CAN frame
+   * @param data The data payload (max 8 bytes)
+   * @param len  Number of bytes in data
+   */
+  void SendCanFrame(APICommand cmd, const uint8_t* data, uint8_t len) const;
+
+  /**
+   * @brief Sends a CAN frame with an explicit arbitration ID
    *
    * @param arbId The full CAN arbitration ID
-   * @param data The data payload to send in the CAN frame
+   * @param data  The data payload (max 8 bytes)
+   * @param len   Number of bytes in data
    */
-  void SendCanFrame(uint32_t arbId, const std::vector<uint8_t> & data) const;
+  void SendCanFrame(uint32_t arbId, const uint8_t* data, uint8_t len) const;
+
+  /**
+   * @brief Sends a periodic status period command
+   *
+   * @param cmd    The Period APICommand to use
+   * @param period The period in milliseconds
+   */
+  void SetPeriodicStatusPeriod(APICommand cmd, uint16_t period);
+
+  /**
+   * @brief Sets a slot-indexed float parameter (e.g. PID gains, SmartMotion limits)
+   *
+   * @param params    Array of four Parameter values, one per slot
+   * @param slot      Slot index (0–3)
+   * @param paramType PARAM_TYPE_* constant
+   * @param name      Parameter name for error messages
+   * @param value     Float value to set
+   */
+  void SetSlottedParam(const Parameter params[4], uint8_t slot, uint8_t paramType, const char* name, float value);
 
   /**
    * @brief Sends a control message to the SPARK controller
    *
-   * @param cmd The API command associated with the control message
-   * @param commandName The control command's name
-   * @param value The value associated with the control command
-   * @param minValue The minimum allowed value for the command (optional)
-   * @param maxValue The maximum allowed value for the command (optional)
+   * @param cmd         The API command
+   * @param commandName Name used in error messages
+   * @param value       The setpoint value
+   * @param minValue    Lower bound (NAN = no check)
+   * @param maxValue    Upper bound (NAN = no check)
    *
-   * @throws std::invalid_argument If the command value is not finite
-   * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype
-   * when not provided)
+   * @throws std::invalid_argument If value is not finite
+   * @throws std::out_of_range     If value is outside [minValue, maxValue]
    */
-  void SendControlMessage(
-    APICommand cmd, std::string commandName, float value,
-    std::optional<float> minValue = std::nullopt,
-    std::optional<float> maxValue = std::nullopt) const;
+  void SendControlMessage(APICommand cmd,
+                          const char* commandName,
+                          float value,
+                          float minValue = NAN,
+                          float maxValue = NAN) const;
 
   /**
    * @brief Creates an arbitration ID for the SPARK controller
@@ -396,17 +406,17 @@ private:
    * @brief Gets the API class from an API command
    *
    * @param cmd The API command
-   * @return constexpr uint8_t The API class extracted from the command
+   * @return uint8_t The API class extracted from the command
    */
-  uint8_t GetAPIClass(APICommand cmd) const;
+  static uint8_t GetAPIClass(APICommand cmd);
 
   /**
    * @brief Gets the API index from an API command
    *
    * @param cmd The API command
-   * @return constexpr uint8_t The API index extracted from the command
+   * @return uint8_t The API index extracted from the command
    */
-  uint8_t GetAPIIndex(APICommand cmd) const;
+  static uint8_t GetAPIIndex(APICommand cmd);
 
   /**
    * @brief Continuously reads periodic status data from the SPARK controller
@@ -429,11 +439,13 @@ private:
    * @throws std::out_of_range If the value is outside the specified range (will default to min and max of datatype
    * when not provided)
    */
-  void SetParameter(
-    Parameter parameterId, uint8_t parameterType, std::string parameterName,
-    std::variant<float, uint32_t, uint16_t, uint8_t, bool> value,
-    std::optional<float> minValue = std::nullopt, std::optional<float> maxValue = std::nullopt,
-    std::optional<std::string> customErrorMessage = std::nullopt);
+  void SetParameter(Parameter parameterId,
+                    uint8_t parameterType,
+                    const char* parameterName,
+                    std::variant<float, uint32_t, uint16_t, uint8_t, bool> value,
+                    float minValue                 = NAN,
+                    float maxValue                 = NAN,
+                    const char* customErrorMessage = nullptr);
 
   /**
    * @brief Reads the value of a specified parameter from the device
@@ -452,18 +464,21 @@ private:
    * @param name A debug name used in error messages
    * @return Value of parameter or type-based default fallback
    */
-  template<typename T> T GetParamAs(Parameter param, const char * name);
+  template <typename T>
+  T GetParamAs(Parameter param, const char* name);
 
   /**
    * @brief Internal helper to get a slot-indexed parameter
    *
-   * @tparam T The expected return type
+   * @tparam T        The expected return type
    * @param baseParam The base parameter enum for slot 0
-   * @param slot The PID slot index (0–3)
-   * @param name A debug name used in error messages
+   * @param stride    Enum value offset between slots (e.g. 8 for PID, 5 for SmartMotion)
+   * @param slot      Slot index (0–3)
+   * @param name      Debug name used in error messages
    * @return Value of the slot-specific parameter
    */
-  template<typename T> T GetPIDParam(Parameter baseParam, uint8_t slot, const char * name);
+  template <typename T>
+  T GetSlottedParam(Parameter baseParam, uint8_t stride, uint8_t slot, const char* name);
 
 public:
   /**
@@ -486,7 +501,10 @@ public:
    * - CAN bus not initialized
    * - Interface already bound to another program
    */
-  SparkBase(const std::string & interfaceName, uint8_t deviceId);
+  SparkBase(const std::string& interfaceName, uint8_t deviceId);
+
+  SparkBase(const SparkBase&)            = delete;
+  SparkBase& operator=(const SparkBase&) = delete;
 
   /**
    * @brief Destructor for SparkBase
@@ -501,7 +519,9 @@ public:
    */
   std::optional<std::tuple<uint8_t, uint8_t, uint8_t, uint8_t, bool>> ReadFirmwareVersion();
 
-  // System Control Methods //
+  // //////////////////////////////////////////////////
+  // SYSTEM CONTROL METHODS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sends a heartbeat signal to keep all SPARK controllers active
@@ -538,7 +558,9 @@ public:
    */
   void Identify();
 
-  // Motor Control Methods //
+  // //////////////////////////////////////////////////
+  // MOTOR CONTROL METHODS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the value for the currently set control type
@@ -588,7 +610,9 @@ public:
    */
   void SetSmartMotion(float smartMotion);
 
-  // Status Methods //
+  // //////////////////////////////////////////////////
+  // STATUS METHODS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the period for periodic status 0
@@ -722,13 +746,9 @@ public:
    */
   float GetAltEncoderPosition() const;
 
-  // Parameter Setters //
-
-  /**
-   * @brief Sets the input mode
-   * @param mode The input mode
-   */
-  void SetInputMode(uint8_t mode);
+  // //////////////////////////////////////////////////
+  // PARAMETER SETTERS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the motor type
@@ -768,7 +788,9 @@ public:
    */
   void SetRampRate(float rate);
 
-  // Advanced //
+  // //////////////////////////////////////////////////
+  // ADVANCED
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the motor Kv (velocity constant)
@@ -788,7 +810,9 @@ public:
    */
   void SetMotorL(uint16_t l);
 
-  // Closed Loop //
+  // //////////////////////////////////////////////////
+  // CLOSED LOOP
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the control type
@@ -835,7 +859,9 @@ public:
    */
   void SetPositionPIDMaxInput(float maxInput);
 
-  // Brushless //
+  // //////////////////////////////////////////////////
+  // BRUSHLESS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the number of pole pairs for brushless motors
@@ -843,7 +869,9 @@ public:
    */
   void SetPolePairs(uint16_t pairs);
 
-  // Current Limit //
+  // //////////////////////////////////////////////////
+  // CURRENT LIMIT
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the current chop limit
@@ -875,7 +903,9 @@ public:
    */
   void SetSmartCurrentConfig(uint16_t config);
 
-  // PIDF //
+  // //////////////////////////////////////////////////
+  // PIDF
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the proportional gain for the specified PID slot
@@ -940,7 +970,9 @@ public:
    */
   void SetOutputMax(uint8_t slot, float max);
 
-  // Limits //
+  // //////////////////////////////////////////////////
+  // LIMITS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Enables or disables the forward hard limit switch
@@ -990,7 +1022,9 @@ public:
    */
   void SetSoftLimitRev(float limit);
 
-  // Follower //
+  // //////////////////////////////////////////////////
+  // FOLLOWER
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the follower ID for this SparkBase
@@ -1004,7 +1038,9 @@ public:
    */
   void SetFollowerConfig(uint32_t config);
 
-  // Encoder Port //
+  // //////////////////////////////////////////////////
+  // ENCODER PORT
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the encoder counts per revolution
@@ -1060,7 +1096,9 @@ public:
    */
   void SetHallSensorAverageDepth(uint16_t depth);
 
-  // Smart Motion //
+  // //////////////////////////////////////////////////
+  // SMART MOTION
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the maximum velocity for Smart Motion in the specified slot
@@ -1134,7 +1172,9 @@ public:
    */
   void SetSlot3Placeholder3(uint8_t slot, float value);
 
-  // Analog Sensor //
+  // //////////////////////////////////////////////////
+  // ANALOG SENSOR
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the conversion factor for analog position readings
@@ -1172,7 +1212,9 @@ public:
    */
   void SetAnalogSampleDelta(uint16_t delta);
 
-  // Alternate Encoder  //
+  // //////////////////////////////////////////////////
+  // ALTERNATE ENCODER
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Configures the data port
@@ -1216,7 +1258,9 @@ public:
    */
   void SetAltEncoderVelocityFactor(float factor);
 
-  // Duty Cycle Absolute Encoder //
+  // //////////////////////////////////////////////////
+  // DUTY CYCLE ABSOLUTE ENCODER
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Sets the position factor for the duty cycle encoder
@@ -1254,9 +1298,13 @@ public:
    */
   void SetDutyCycleZeroOffset(float offset);
 
-  // Parameter Getters //
+  // //////////////////////////////////////////////////
+  // PARAMETER GETTERS
+  // //////////////////////////////////////////////////
 
-  // Basic //
+  // //////////////////////////////////////////////////
+  // BASIC
+  // //////////////////////////////////////////////////
   /**
    * @brief Get the motor type
    * @return Motor type as uint8_t (0 = Brushed, 1 = Brushless)
@@ -1293,7 +1341,9 @@ public:
    */
   float GetRampRate();
 
-  // Advanced //
+  // //////////////////////////////////////////////////
+  // ADVANCED
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the motor Kv rating
@@ -1313,7 +1363,9 @@ public:
    */
   uint16_t GetMotorL();
 
-  // Closed Loop //
+  // //////////////////////////////////////////////////
+  // CLOSED LOOP
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the control type
@@ -1357,7 +1409,9 @@ public:
    */
   float GetPositionPIDMaxInput();
 
-  // Brushless //
+  // //////////////////////////////////////////////////
+  // BRUSHLESS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the number of pole pairs
@@ -1365,7 +1419,9 @@ public:
    */
   uint16_t GetPolePairs();
 
-  // Current Limit //
+  // //////////////////////////////////////////////////
+  // CURRENT LIMIT
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the current chop value
@@ -1397,7 +1453,9 @@ public:
    */
   uint16_t GetSmartCurrentConfig();
 
-  // PIDF //
+  // //////////////////////////////////////////////////
+  // PIDF
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the proportional (P) constant for a given slot
@@ -1455,7 +1513,9 @@ public:
    */
   float GetOutputMax(uint8_t slot);
 
-  // Limits //
+  // //////////////////////////////////////////////////
+  // LIMITS
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the forward hard limit enable state
@@ -1505,7 +1565,9 @@ public:
    */
   float GetSoftLimitRev();
 
-  // Follower //
+  // //////////////////////////////////////////////////
+  // FOLLOWER
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the follower ID
@@ -1519,7 +1581,9 @@ public:
    */
   uint32_t GetFollowerConfig();
 
-  // Encoder Port //
+  // //////////////////////////////////////////////////
+  // ENCODER PORT
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the encoder counts per revolution
@@ -1575,7 +1639,9 @@ public:
    */
   uint16_t GetHallSensorAverageDepth();
 
-  // Smart Motion //
+  // //////////////////////////////////////////////////
+  // SMART MOTION
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the maximum velocity for Smart Motion in a given slot
@@ -1640,7 +1706,9 @@ public:
    */
   float GetSlot3Placeholder3(uint8_t slot);
 
-  // Analog Sensor //
+  // //////////////////////////////////////////////////
+  // ANALOG SENSOR
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the analog position conversion factor
@@ -1678,7 +1746,9 @@ public:
    */
   uint16_t GetAnalogSampleDelta();
 
-  // Alternate Encoder //
+  // //////////////////////////////////////////////////
+  // ALTERNATE ENCODER
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the data port configuration
@@ -1722,7 +1792,9 @@ public:
    */
   float GetAltEncoderVelocityFactor();
 
-  // Duty Cycle Absolute Encoder //
+  // //////////////////////////////////////////////////
+  // DUTY CYCLE ABSOLUTE ENCODER
+  // //////////////////////////////////////////////////
 
   /**
    * @brief Get the duty cycle position factor
@@ -1761,4 +1833,4 @@ public:
   float GetDutyCycleZeroOffset();
 };
 
-#endif // SPARKBASE_HPP
+#endif  // SPARKBASE_HPP
