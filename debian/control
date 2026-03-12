@@ -2,7 +2,7 @@ Source: sparkcan
 Section: libs
 Priority: optional
 Maintainer: Grayson Arendt <grayson.n.arendt@gmail.com>
-Build-Depends: debhelper-compat (= 13), cmake (>= 3.10)
+Build-Depends: debhelper-compat (= 12), cmake (>= 3.10)
 Standards-Version: 4.6.0
 Homepage: https://github.com/grayson-arendt/sparkcan
 

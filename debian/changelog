@@ -1,10 +1,6 @@
-sparkcan (1.2.0-1~jammy1) jammy; urgency=medium
+sparkcan (1.2.1-1~jammy1) jammy; urgency=medium
 
-  * Expose Heartbeat as a static method for bus-wide broadcast
-  * Add periodic status message reading via background thread
-  * Add SmartMotion, SmartVelocity, Voltage, Current control modes
-  * Add alternate encoder support
-  * Add periodic status rate configuration
-  * Various refactoring and stability improvements
+  * Bump upstream version to 1.2.1.
+  * Link pthreads explicitly for GCC 9 / focal compatibility.
 
  -- Grayson Arendt <grayson.n.arendt@gmail.com>  Wed, 11 Mar 2026 12:00:00 -0500
