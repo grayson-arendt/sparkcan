@@ -1,0 +1,3 @@
+usr/lib/*/libsparkcan.so*
+usr/include/*
+usr/lib/*/cmake/sparkcan/

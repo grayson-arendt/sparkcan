@@ -329,7 +329,7 @@ private:
    * @param data  Payload bytes (max 8)
    * @param len   Number of payload bytes
    */
-  void WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len) const;
+  static void WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len);
 
   /**
    * @brief Sends a CAN frame using an APICommand to derive the arbitration ID
@@ -525,8 +525,11 @@ public:
 
   /**
    * @brief Sends a heartbeat signal to keep all SPARK controllers active
+   *
+   * This is a single broadcast command that enables every SPARK controller on
+   * the bus. Call it once per control loop — not once per motor object.
    */
-  void Heartbeat();
+  static void Heartbeat();
 
   /**
    * @brief Resets all faults on the SPARK controller

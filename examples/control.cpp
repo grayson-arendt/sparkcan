@@ -40,9 +40,8 @@ int main()
         start)
       .count() < 10)
     {
-      // Enable and run motors
-      motor.Heartbeat();
-      motor2.Heartbeat();
+      // When using multiple motors, the static Heartbeat method can be used instead of calling it on each motor object
+      SparkBase::Heartbeat();
 
       motor.SetDutyCycle(0.05);
       motor2.SetDutyCycle(0.1);

@@ -103,7 +103,7 @@ SparkBase::~SparkBase()
   }
 }
 
-void SparkBase::WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len) const
+void SparkBase::WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len)
 {
   if (len > 8)
   {
@@ -524,7 +524,14 @@ void SparkBase::ReadPeriodicMessages()
 void SparkBase::Heartbeat()
 {
   const uint8_t data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  SendCanFrame(APICommand::Heartbeat, data, 8);
+  // Compute broadcast arb ID (device ID 0) — enables all SPARK controllers on the bus
+  const uint8_t  apiClass = GetAPIClass(APICommand::Heartbeat);
+  const uint8_t  apiIndex = GetAPIIndex(APICommand::Heartbeat);
+  const uint32_t arbId    = (static_cast<uint32_t>(DEVICE_TYPE) << 24) |
+                            (static_cast<uint32_t>(MANUFACTURER) << 16) |
+                            (static_cast<uint32_t>(apiClass) << 10) |
+                            (static_cast<uint32_t>(apiIndex) << 6);
+  WriteFrame(arbId, data, 8);
 }
 
 void SparkBase::BurnFlash()
