@@ -1,4 +1,4 @@
-sparkcan (1.2.0-1) jammy; urgency=medium
+sparkcan (1.2.0-1~jammy1) jammy; urgency=medium
 
   * Expose Heartbeat as a static method for bus-wide broadcast
   * Add periodic status message reading via background thread

@@ -1,2 +1,7 @@
 build/
 .clang-format
+debian/files
+debian/.debhelper/
+debian/tmp/
+debian/*.substvars
+debian/debhelper-build-stamp
