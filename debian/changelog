@@ -1,0 +1,6 @@
+sparkcan (1.2.1-1~jammy1) jammy; urgency=medium
+
+  * Bump upstream version to 1.2.1.
+  * Link pthreads explicitly for GCC 9 / focal compatibility.
+
+ -- Grayson Arendt <grayson.n.arendt@gmail.com>  Wed, 11 Mar 2026 12:00:00 -0500
