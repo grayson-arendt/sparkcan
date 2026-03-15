@@ -41,11 +41,13 @@ static T unpack(const uint8_t* b, int offset = 0)
 
 SparkBase::SparkBase(const std::string& interfaceName, uint8_t deviceId) : deviceId_(deviceId)
 {
+  // Validate device ID
   if (deviceId_ > 62)
   {
     throw std::out_of_range(RED "Invalid CAN bus ID. Must be between 0 and 62." RESET);
   }
 
+  // Get interface name
   std::strncpy(interfaceName_, interfaceName.c_str(), IFNAMSIZ - 1);
   interfaceName_[IFNAMSIZ - 1] = '\0';
 
@@ -90,11 +92,13 @@ SparkBase::SparkBase(const std::string& interfaceName, uint8_t deviceId) : devic
     throw std::runtime_error(RED "Binding to interface failed: Another program may be using this interface." RESET);
   }
 
+  // Spin up background thread to continuously receive periodic status frames
   thread_ = std::thread(&SparkBase::ReadPeriodicMessages, this);
 }
 
 SparkBase::~SparkBase()
 {
+  // Close background thread and CAN socket
   run_ = false;
   close(soc_);
   if (thread_.joinable())
@@ -105,11 +109,13 @@ SparkBase::~SparkBase()
 
 void SparkBase::WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len)
 {
+  // Validate length
   if (len > 8)
   {
     throw std::runtime_error("CAN frame too large");
   }
 
+  // Construct CAN frame
   struct can_frame frame = {};
   frame.can_id           = arbId | CAN_EFF_FLAG;
   frame.can_dlc          = len;
@@ -117,6 +123,7 @@ void SparkBase::WriteFrame(uint32_t arbId, const uint8_t* data, uint8_t len)
 
   constexpr int MAX_ATTEMPTS = 1000;
 
+  // Retry up to MAX_ATTEMPTS times, backing off for 1ms if the TX buffer is full
   for (int attempt = 0; attempt < MAX_ATTEMPTS; ++attempt)
   {
     ssize_t bytesSent = write(soc_, &frame, sizeof(frame));
@@ -162,6 +169,7 @@ uint32_t SparkBase::CreateArbId(APICommand cmd) const
   uint8_t apiClass = GetAPIClass(cmd);
   uint8_t apiIndex = GetAPIIndex(cmd);
 
+  // 29-bit extended CAN ID: DeviceType(5)| Mfr(8)| APIClass(6) | APIIndex(4) | DeviceID(6)
   return (static_cast<uint32_t>(DEVICE_TYPE) << 24) | (static_cast<uint32_t>(MANUFACTURER) << 16) |
          (static_cast<uint32_t>(apiClass) << 10) | (static_cast<uint32_t>(apiIndex) << 6) |
          static_cast<uint32_t>(deviceId_);
@@ -169,6 +177,7 @@ uint32_t SparkBase::CreateArbId(APICommand cmd) const
 
 uint32_t SparkBase::CreateParamArbId(Parameter paramId) const
 {
+  // APIClass 48 is the REV parameter access class, with paramId in the APIIndex field
   return (static_cast<uint32_t>(DEVICE_TYPE) << 24) | (static_cast<uint32_t>(MANUFACTURER) << 16) |
          (static_cast<uint32_t>(48) << 10) | (static_cast<uint32_t>(paramId) << 6) | static_cast<uint32_t>(deviceId_);
 }
@@ -233,6 +242,7 @@ void SparkBase::SetParameter(Parameter parameterId,
   uint8_t data[5] = {};
   uint32_t arbId  = CreateParamArbId(parameterId);
 
+  // Encode the value into bytes 0-3, with byte 4 set to the parameter type tag
   std::visit(
       [&](auto&& v) {
         using T = std::decay_t<decltype(v)>;
@@ -271,6 +281,7 @@ void SparkBase::SetParameter(Parameter parameterId,
 
 std::optional<std::variant<float, uint32_t, bool>> SparkBase::ReadParameter(Parameter parameterId)
 {
+  // Send a zero length request frame with the parameter ID encoded in the arb ID
   struct can_frame request = {};
   uint32_t requestarbId    = CreateParamArbId(parameterId);
   request.can_id           = requestarbId | CAN_EFF_FLAG;
@@ -281,6 +292,7 @@ std::optional<std::variant<float, uint32_t, bool>> SparkBase::ReadParameter(Para
     return std::nullopt;
   }
 
+  // Wait up to READ_TIMEOUT_US for the response
   struct can_frame response = {};
   struct timeval tv         = {0, READ_TIMEOUT_US};
   fd_set read_fds;
@@ -296,10 +308,11 @@ std::optional<std::variant<float, uint32_t, bool>> SparkBase::ReadParameter(Para
       uint32_t receivedarbId = response.can_id & CAN_EFF_MASK;
       if (receivedarbId == requestarbId)
       {
+        // Byte 4 of the response encodes the value type
         uint8_t type = response.data[4];
         switch (type)
         {
-          case 0x01: {
+          case 0x01: { // uint
             uint32_t val = 0;
             for (int i = 0; i < 4; ++i)
             {
@@ -307,12 +320,12 @@ std::optional<std::variant<float, uint32_t, bool>> SparkBase::ReadParameter(Para
             }
             return val;
           }
-          case 0x02: {
+          case 0x02: { // float
             float val;
             std::memcpy(&val, response.data, sizeof(float));
             return val;
           }
-          case 0x03: {
+          case 0x03: { // bool
             return static_cast<bool>(response.data[0] != 0);
           }
         }
@@ -455,9 +468,11 @@ void SparkBase::ReadPeriodicMessages()
     FD_ZERO(&read_fds);
     FD_SET(soc_, &read_fds);
 
+    // Wait up to READ_TIMEOUT_US for a periodic status frame
     int ret = select(soc_ + 1, &read_fds, nullptr, nullptr, &tv);
     if (ret > 0)
     {
+      // Read the CAN frame
       ssize_t bytesRead = read(soc_, &response, sizeof(response));
       if (bytesRead <= 0)
       {
@@ -468,12 +483,14 @@ void SparkBase::ReadPeriodicMessages()
         continue;
       }
 
+      // Parse the response based on the arb ID
       uint32_t receivedArbId = response.can_id & CAN_EFF_MASK;
       const uint8_t* d       = response.data;
       auto now               = std::chrono::steady_clock::now();
 
       std::lock_guard<std::mutex> lock(mutex_);
 
+      // Decode periodic status based on Period
       if (receivedArbId == CreateArbId(APICommand::Period0))
       {
         period0_.dutyCycle    = unpack<int16_t>(d) / P0_DUTY_CYCLE_SCALE;
@@ -500,8 +517,10 @@ void SparkBase::ReadPeriodicMessages()
       }
       else if (receivedArbId == CreateArbId(APICommand::Period3))
       {
+        // Voltage is packed in the lower 10 bits of bytes 0-1
         uint16_t v                   = d[0] | (uint16_t(d[1] & 0x03) << 8);
         period3_.analogVoltage       = float(v) / P3_VOLTAGE_SCALE;
+        // Velocity spans bits [2..23] of bytes 1-3
         constexpr uint8_t lowerShift = 2;
         constexpr uint8_t midShift   = 8 - lowerShift;
         constexpr uint8_t highShift  = midShift + 8;
@@ -524,9 +543,9 @@ void SparkBase::ReadPeriodicMessages()
 void SparkBase::Heartbeat()
 {
   const uint8_t data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  // Compute broadcast arb ID (device ID 0) — enables all SPARK controllers on the bus
   const uint8_t  apiClass = GetAPIClass(APICommand::Heartbeat);
   const uint8_t  apiIndex = GetAPIIndex(APICommand::Heartbeat);
+  // Heartbeat is a broadcast to all devices
   const uint32_t arbId    = (static_cast<uint32_t>(DEVICE_TYPE) << 24) |
                             (static_cast<uint32_t>(MANUFACTURER) << 16) |
                             (static_cast<uint32_t>(apiClass) << 10) |
