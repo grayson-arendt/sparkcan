@@ -1,0 +1,23 @@
+# Building and Uploading sparkcan to PPA
+
+1. Update `debian/changelog` top entry with the target series and version.
+
+2. Generate the orig tarball (once per upstream version):
+```bash
+tar --exclude=./debian -czf ../sparkcan_1.2.1.orig.tar.gz -C .. sparkcan
+```
+
+3. Build signed source package:
+   - First upload for a new upstream version (include orig tarball):
+```bash
+debuild -S -sa
+```
+   - Rebuilding for another series, same upstream version (orig already in PPA):
+```bash
+debuild -S -sd
+```
+
+4. Upload:
+```bash
+dput ppa:graysonarendt/sparkcan ../sparkcan_1.2.1-1~SERIES1_source.changes
+```

@@ -1,6 +1,25 @@
-sparkcan (1.2.1-1~jammy1) jammy; urgency=medium
+sparkcan (1.2.3-1~noble1) noble; urgency=medium
 
-  * Bump upstream version to 1.2.1.
+  * Fix Period1 voltage and current decoding (correct bit masking and shift).
+
+ -- Grayson Arendt <grayson.n.arendt@gmail.com>  Mon, 14 Jul 2026 12:00:00 -0500
+
+sparkcan (1.2.3-1~jammy1) jammy; urgency=medium
+
+  * Fix Period1 voltage and current decoding (correct bit masking and shift).
+
+ -- Grayson Arendt <grayson.n.arendt@gmail.com>  Mon, 14 Jul 2026 12:00:00 -0500
+
+sparkcan (1.2.2-1~noble1) noble; urgency=medium
+
+  * Rebuild for Ubuntu 24.04 (noble).
+  * Raise debhelper compat level to 13 for current toolchain support.
+
+ -- Grayson Arendt <grayson.n.arendt@gmail.com>  Tue, 25 Mar 2026 12:00:00 -0500
+
+sparkcan (1.2.2-1~jammy1) jammy; urgency=medium
+
+  * Bump upstream version to 1.2.2.
   * Link pthreads explicitly for GCC 9 / focal compatibility.
 
  -- Grayson Arendt <grayson.n.arendt@gmail.com>  Wed, 11 Mar 2026 12:00:00 -0500

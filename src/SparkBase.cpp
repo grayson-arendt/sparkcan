@@ -505,8 +505,8 @@ void SparkBase::ReadPeriodicMessages()
       {
         period1_.velocity    = unpack<float>(d);
         period1_.temperature = d[4];
-        period1_.voltage     = unpack<uint16_t>(d, 5) / P1_VOLTAGE_SCALE;
-        period1_.current     = (unpack<uint16_t>(d, 6) & 0x0FFF) / P1_CURRENT_SCALE;
+        period1_.voltage     = (unpack<uint16_t>(d, 5) & 0x0FFF) / P1_VOLTAGE_SCALE;
+        period1_.current     = (unpack<uint16_t>(d, 6) >> 4) / P1_CURRENT_SCALE;
         period1_.timestamp   = now;
       }
       else if (receivedArbId == CreateArbId(APICommand::Period2))
